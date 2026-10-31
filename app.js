@@ -373,6 +373,10 @@
     var todo = late + due;
     var matsV = data.mats.filter(function (m) { return !data.reglages.semestres.length || data.reglages.semestres.indexOf(m.semestre) >= 0; });
     var fut = matsV.filter(function (m) { return m.examen && dnum(m.examen) >= t; }).sort(function (a, b) { return dnum(a.examen) - dnum(b.examen); });
+    var dh = el('div', 'dhead'), hh = el('span', 'hh'); hh.innerHTML = '<svg viewBox="0 0 24 22" width="34" height="31" style="position:absolute;left:0;top:0"><path fill="#f08ab0" d="M12 21.5C5 15.8 1 12.2 1 7.6 1 4.4 3.5 2 6.6 2c2 0 3.9 1 5.4 3C13.5 3 15.4 2 17.4 2 20.5 2 23 4.4 23 7.6c0 4.6-4 8.2-11 13.9z"/></svg><svg viewBox="0 0 24 22" width="22" height="20" style="position:absolute;left:18px;top:16px"><path fill="#7a1f3d" d="M12 21.5C5 15.8 1 12.2 1 7.6 1 4.4 3.5 2 6.6 2c2 0 3.9 1 5.4 3C13.5 3 15.4 2 17.4 2 20.5 2 23 4.4 23 7.6c0 4.6-4 8.2-11 13.9z"/></svg>';
+    var tt = el('div', 'dht'); tt.appendChild(el('b', '', 'Mes révisions')); tt.appendChild(el('small', '', 'Méthode des J · suivi de mes exercices'));
+    var dd0 = el('span', 'dhd', new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
+    dh.appendChild(hh); dh.appendChild(tt); dh.appendChild(dd0); box.appendChild(dh);
     var ban = el('div', 'banner');
     ban.textContent = todo + ' exercice' + (todo > 1 ? 's' : '') + ' à réviser aujourd’hui';
     if (fut.length) { var dd = dnum(fut[0].examen) - t; ban.textContent = todo + ' exercice' + (todo > 1 ? 's' : '') + ' à réviser aujourd’hui  ·  Prochain examen : ' + fut[0].nom + ' ' + (dd === 0 ? 'aujourd’hui' : 'dans ' + dd + ' jour' + (dd > 1 ? 's' : '')); }
@@ -429,22 +433,22 @@
     else {
       var tb = document.createElement('table'); tb.className = 'tbl dark';
       var hd = document.createElement('tr'); ['Semestre', 'Matière', 'Date', 'Dans', 'Niveau'].forEach(function (h) { hd.appendChild(el('th', '', h)); }); tb.appendChild(hd);
-      fut.slice(0, 10).forEach(function (m) {
+      fut.forEach(function (m) {
         var tr = document.createElement('tr'); tr.appendChild(el('td', 'sem', m.semestre)); tr.appendChild(el('td', '', m.nom));
         var dn = dnum(m.examen); tr.appendChild(el('td', 'c', fromNum(dn).slice(0, 6) + fromNum(dn).slice(8)));
         tr.appendChild(el('td', 'c b', 'J-' + (dn - t)));
         var es = L.filter(function (x) { return x.semestre === m.semestre && x.matiere === m.nom; }), av = es.length ? es.reduce(function (a, x) { return a + lvl(x); }, 0) / es.length : null;
         var nt = el('td', 'c n'); if (av !== null) nt.appendChild(nivBadge(av, 'sm'));
         tr.appendChild(nt); tr.className = 'top'; tb.appendChild(tr);
-        var J = dn - t, Rg = data.reglages, X = J > Rg.seuilButoire ? Rg.butoireSi : Rg.butoireSinon, need = needLevel(Math.max(0, J - X));
+        var J = dn - t, Rg = data.reglages, X = J > Rg.seuilButoire ? Rg.butoireSi : Rg.butoireSinon, need = Math.round(Math.max(0, Math.min(5, 5 * (1 - Math.max(0, J - X) / Math.max(1, Rg.debutExam)))) * 10) / 10;
         var pr = document.createElement('tr'), pd = document.createElement('td'); pd.colSpan = 5; pd.className = 'prog';
-        var trk = el('div', 'trk'), fl = el('i', 'fl'); fl.style.width = Math.min(100, need / 5 * 100) + '%'; trk.appendChild(fl);
-        for (var q = 1; q < 5; q++) { var tk = el('b', 'tk'); tk.style.left = (q * 20) + '%'; trk.appendChild(tk); }
-        if (av !== null) { var me = el('u', 'me'); me.style.left = Math.min(100, av / 5 * 100) + '%'; me.className = 'me' + (av + 0.05 < need ? ' behind' : ''); trk.appendChild(me); }
-        var lab = el('span', 'plab', 'Attendu ' + (need > 5 ? '5+' : need) + ' · Toi ' + (av === null ? '–' : fmt1(Math.round(av * 10) / 10)));
+        var trk = el('div', 'trk sq');
+        for (var q = 0; q < 5; q++) { var cell = el('span', 'cell'), f2 = el('i', 'fl'); f2.style.width = Math.max(0, Math.min(1, need - q)) * 100 + '%'; cell.appendChild(f2); trk.appendChild(cell); }
+        if (av !== null) { var me = el('u', 'me'), pos = Math.min(5, av), k = Math.min(4, Math.floor(pos)); me.style.left = 'calc(' + (k * 20) + '% + ' + ((pos - k) * 20 * 0.96) + '%)'; me.className = 'me' + (av + 0.05 < need ? ' behind' : ''); trk.appendChild(me); }
+        var lab = el('span', 'plab', 'Attendu ' + fmt1(need) + ' · Toi ' + (av === null ? '–' : fmt1(Math.round(av * 10) / 10)));
         pd.appendChild(trk); pd.appendChild(lab); pr.appendChild(pd); tb.appendChild(pr);
       });
-      c3.appendChild(tb);
+      var sc = el('div', 'mscroll'); sc.appendChild(tb); c3.appendChild(sc);
     }
     cards.exam = c3;
 
