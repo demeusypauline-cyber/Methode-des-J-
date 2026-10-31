@@ -64,7 +64,7 @@
     if (E !== null) {
       var dE = E - I;
       if (dE >= 0 && dE <= R.debutExam) {
-        var X = dE > R.seuilButoire ? R.butoireSi : R.butoireSinon;
+        var X = Math.max(1, dE > R.seuilButoire ? R.butoireSi : R.butoireSinon); /* au plus tard la veille de l'examen */
         var plafond = dE > X ? dE - X : 1e9;
         return I + Math.min(iv / interval(5) * (dE - X), plafond);
       }
@@ -446,7 +446,7 @@
     else {
       var tb = el('div', 'exl');
       fut.forEach(function (m) {
-        var dn = dnum(m.examen), J = dn - t, Rg = data.reglages, X = J > Rg.seuilButoire ? Rg.butoireSi : Rg.butoireSinon;
+        var dn = dnum(m.examen), J = dn - t, Rg = data.reglages, X = Math.max(1, J > Rg.seuilButoire ? Rg.butoireSi : Rg.butoireSinon);
         var need = Math.round(Math.max(0, Math.min(5, 5 * (1 - Math.max(0, J - X) / Math.max(1, Rg.debutExam)))) * 10) / 10;
         var es = L.filter(function (x) { return x.semestre === m.semestre && x.matiere === m.nom; }), av = es.length ? es.reduce(function (a, x) { return a + lvl(x); }, 0) / es.length : null;
         var row = el('div', 'exr'), mid = el('div', 'exm');
@@ -676,7 +676,7 @@
             var ox = o.v ? o.x : o.x, gp = t + d - (o.v ? o.ev : dnum(o.x.evalue)), nt = gp >= 0 ? RET(gp) : null;
             if (nt !== null) {
               var pl = o.v ? o.L : lvl(o.x), nl = Math.min(5, Math.round(nt)); if (!RETREAL) nl = pl + 1; else if (nl >= 5 && pl >= 5) nl = pl + 1;
-              var r2 = revisionAt(ox, t + d, interval(nl)); if (r2 < t + N) cand.push({ v: true, x: ox, L: nl, ev: t + d, r: r2, ex: examAt(ox, t + d), i: 'v' + (vc++), m: o.m });
+              var r2 = Math.max(revisionAt(ox, t + d, interval(nl)), t + d + 1); if (r2 < t + N) cand.push({ v: true, x: ox, L: nl, ev: t + d, r: r2, ex: examAt(ox, t + d), i: 'v' + (vc++), m: o.m });
             }
           }
           if (o.v) { if (o.r < t + d) { if (o.ex) pvLE[d] += o.m; else pvL[d] += o.m; } else if (o.ex) pvE[d] += o.m; else pv[d] += o.m; } else if (o.r < t) { if (o.ex) lateEx[d] += o.m; else late[d] += o.m; } else if (o.ex) ex[d] += o.m; else nm[d] += o.m;
@@ -748,7 +748,7 @@
     box.appendChild(c1);
 
     var c2 = setCard('Mode examen', 'flag');
-    [['Début du mode examen : jours avant l’examen', 'debutExam', 'jours'], ['Butoire : seuil — un exo fait plus de … jours avant l’examen est « tôt », sinon « tard »', 'seuilButoire', 'jours'], ['Butoire si fait tôt : ne plus réviser … jours avant l’examen', 'butoireSi', 'jours'], ['Butoire sinon (fait tard) : ne plus réviser … jours avant l’examen (0 = jusqu’au jour J)', 'butoireSinon', 'jours'], ['Minutes comptées par exo sans durée', 'minutesDefaut', 'min']].forEach(function (a) {
+    [['Début du mode examen : jours avant l’examen', 'debutExam', 'jours'], ['Butoire : seuil — un exo fait plus de … jours avant l’examen est « tôt », sinon « tard »', 'seuilButoire', 'jours'], ['Butoire si fait tôt : ne plus réviser … jours avant l’examen', 'butoireSi', 'jours'], ['Butoire sinon (fait tard) : ne plus réviser … jours avant l’examen (0 ou 1 = jusqu’à la veille de l’examen)', 'butoireSinon', 'jours'], ['Minutes comptées par exo sans durée', 'minutesDefaut', 'min']].forEach(function (a) {
       setRow(c2, a[0], R[a[1]], function (v) { R[a[1]] = v === null ? 0 : v; }, a[2]);
     });
     box.appendChild(c2);
