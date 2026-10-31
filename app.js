@@ -425,7 +425,7 @@
     /* charge */
     var c1 = dcard('Charge de révision à venir');
     var lg = el('div', 'legend');
-    [['En retard', C_LATE], ['Prévu', C_NORM], ['Examen (vagues)', 'hatch']].concat(!data.reglages.prevOff ? [[retentionFn() ? 'Révisions prévues (d’après ta courbe)' : 'Révisions prévues (si toutes tes notes sont des 5)', C_PV]] : []).forEach(function (a) { var sp = el('span'); var i = el('i'); if (a[1] === 'hatch') i.className = 'hat'; else i.style.background = a[1]; sp.appendChild(i); sp.appendChild(document.createTextNode(a[0])); lg.appendChild(sp); });
+    [['En retard', C_LATE], ['Prévu', C_NORM], ['Examen (vagues)', 'hatch']].concat(!data.reglages.prevOff ? [[retentionFn() ? 'Révisions prévues (d’après ta courbe)' : 'Révisions prévues (si tu passes chaque fois au J suivant)', C_PV]] : []).forEach(function (a) { var sp = el('span'); var i = el('i'); if (a[1] === 'hatch') i.className = 'hat'; else i.style.background = a[1]; sp.appendChild(i); sp.appendChild(document.createTextNode(a[0])); lg.appendChild(sp); });
     c1.appendChild(lg);
     {
       var sg = el('div', 'seg'); [[false, 'Sans prévisions'], [true, 'Avec prévisions']].forEach(function (o) {
@@ -654,7 +654,7 @@
   }
   function drawCharge(cv, L, t) {
     var N = 42, late = [], lateEx = [], ex = [], nm = [], pv = [], cnt = []; for (var i = 0; i < N; i++) { late.push(0); lateEx.push(0); ex.push(0); nm.push(0); pv.push(0); cnt.push(0); }
-    var RET = data.reglages.prevOff ? null : (retentionFn() || function () { return 5; }), vc = 0;
+    var RETREAL = data.reglages.prevOff ? null : retentionFn(), RET = data.reglages.prevOff ? null : (RETREAL || function () { return 5; }), vc = 0;
     var cand = [];
     data.ex.forEach(function (x, i) { if (visible(x) && x.evalue) cand.push({ x: x, r: revision(x), ex: modeExam(x), i: i, m: mins(x) }); });
     function lvO(o) { return o.v ? o.L : lvl(o.x); }
@@ -672,7 +672,7 @@
           done[o.i] = 1; if (!o.v) cnt[d]++;
           if (RET && !o.ex) {
             var gp = t + d - (o.v ? o.ev : dnum(o.x.evalue)), nt = gp >= 0 ? RET(gp) : null;
-            if (nt !== null) { var pl = o.v ? o.L : lvl(o.x), nl = Math.min(5, Math.round(nt)); if (nl >= 5 && pl >= 5) nl = pl + 1; var r2 = t + d + interval(nl); if (r2 < t + N) cand.push({ v: true, dp: (o.dp || 0) + 1, L: nl, ev: t + d, r: r2, ex: false, i: 'v' + (vc++), m: o.m }); }
+            if (nt !== null) { var pl = o.v ? o.L : lvl(o.x), nl = Math.min(5, Math.round(nt)); if (!RETREAL) nl = pl + 1; else if (nl >= 5 && pl >= 5) nl = pl + 1; var r2 = t + d + interval(nl); if (r2 < t + N) cand.push({ v: true, dp: (o.dp || 0) + 1, L: nl, ev: t + d, r: r2, ex: false, i: 'v' + (vc++), m: o.m }); }
           }
           if (o.v) pv[d] += o.m; else if (o.r < t) { if (o.ex) lateEx[d] += o.m; else late[d] += o.m; } else if (o.ex) ex[d] += o.m; else nm[d] += o.m;
         }
