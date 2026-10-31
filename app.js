@@ -4,7 +4,7 @@
   var DAY = 86400000;
   var NIV = ['Échec total', 'Beaucoup d’erreurs', 'Compréhension partielle', 'Compréhension correcte', 'Presque parfait', 'Maîtrise totale'];
   var JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-  var DEF = { intervalles: [2, 4, 10, 25, 35, 50, 70, 90, 110, 130, 150, 170], minutesDefaut: 5, debutExam: 50, seuilButoire: 15, butoireSi: 5, butoireSinon: 0, planning: [60, 60, 30, 180, 30, 180, 30], semestres: [] };
+  var DEF = { intervalles: [2, 4, 10, 25, 35, 50, 70, 90, 110, 130, 150, 170], minutesDefaut: 5, debutExam: 50, seuilButoire: 15, butoireSi: 5, butoireSinon: 0, planning: [60, 60, 30, 180, 30, 180, 30], semestres: [], ordreSem: 'manuel', semOrdre: [] };
   var data = { ex: [], mats: [], reglages: JSON.parse(JSON.stringify(DEF)) };
   var view = 'today', editingId = null, doingId = null, shown = 120;
 
@@ -87,7 +87,17 @@
   }
 
   /* ---------- filtres semestres ---------- */
-  function semestres() { var s = []; data.mats.forEach(function (m) { if (s.indexOf(m.semestre) < 0) s.push(m.semestre); }); return s; }
+  function semestres() {
+    var s = []; data.mats.forEach(function (m) { if (s.indexOf(m.semestre) < 0) s.push(m.semestre); });
+    var R = data.reglages;
+    if (R.ordreSem === 'alpha') return s.sort(function (a, b) { return a.localeCompare(b, 'fr', { numeric: true, sensitivity: 'base' }); });
+    var o = R.semOrdre || [];
+    return s.map(function (z, i) { return [z, o.indexOf(z) >= 0 ? o.indexOf(z) : 1000 + i]; }).sort(function (a, b) { return a[1] - b[1]; }).map(function (p) { return p[0]; });
+  }
+  function moveSem(s, dir) {
+    var l = semestres(), i = l.indexOf(s), j = i + dir; if (j < 0 || j >= l.length) return;
+    var t = l[i]; l[i] = l[j]; l[j] = t; data.reglages.semOrdre = l; data.reglages.ordreSem = 'manuel'; save(); render();
+  }
   function renderFilters() {
     var box = $('filters'); box.textContent = '';
     var all = semestres(); if (all.length < 2) return;
@@ -107,9 +117,10 @@
   function exoCard(o, withBtn) {
     var x = o.x, c = el('div', 'card' + (o.ex ? ' exam' : ''));
     var top = el('div', 'row2');
-    var l = el('div'); l.appendChild(el('b', '', x.matiere + (x.intitule ? ' · ' + x.intitule : '')));
-    l.appendChild(el('div', 'muted', x.semestre + ' · fait le ' + fromNum(dnum(x.evalue)) + ' · niveau ' + x.succes));
-    top.appendChild(l);
+    var nb = el('div', 'niv', String(x.succes)); var nv = scale(x.succes || 0); nb.style.background = nv; nb.style.color = (x.succes || 0) < 3.2 ? '#fff' : '#5c1530'; nb.title = NIV[Math.min(5, x.succes || 0)] || '';
+    var l = el('div'); l.style.flex = '1'; l.appendChild(el('b', '', x.matiere + (x.intitule ? ' · ' + x.intitule : '')));
+    l.appendChild(el('div', 'muted', x.semestre + ' · fait le ' + fromNum(dnum(x.evalue)) + (NIV[x.succes] ? ' · ' + NIV[x.succes] : '')));
+    top.appendChild(nb); top.appendChild(l);
     if (withBtn) { var b = el('button', 'primary', 'Refait'); b.type = 'button'; b.addEventListener('click', function () { openDone(x.id); }); top.appendChild(b); }
     c.appendChild(top);
     var p = el('div'); p.style.marginTop = '6px';
@@ -146,9 +157,8 @@
 
   /* ---------- historique de la semaine ---------- */
   function addHist(x, niv) {
-    var lim = Date.now() - 30 * DAY; data.hist = (data.hist || []).filter(function (h) { return h.ts > lim; });
-    data.hist.push({ id: x.id, ts: Date.now(), jour: todayISO(), avant: { succes: x.succes, evalue: x.evalue || '' }, niveau: niv });
-    data.jours = data.jours || {}; data.jours[todayISO()] = (data.jours[todayISO()] || 0) + mins(x);
+    data.hist = data.hist || [];
+    data.hist.push({ id: x.id, ts: Date.now(), jour: todayISO(), avant: { succes: x.succes, evalue: x.evalue || '' }, niveau: niv, m: mins(x) });
   }
   function histBlock() {
     var lim = Date.now() - 7 * DAY, L = (data.hist || []).filter(function (h) { return h.ts > lim; }).sort(function (a, b) { return b.ts - a.ts; });
@@ -165,7 +175,7 @@
       var sel = document.createElement('select'); NIV.forEach(function (n, i) { var o = el('option', '', i + ' · ' + n); o.value = i; sel.appendChild(o); }); sel.value = h.niveau;
       sel.addEventListener('change', function () { h.niveau = +sel.value; x.succes = h.niveau; save(); render(); toast('Niveau corrigé.'); });
       var un = el('button', 'plain', 'Annuler'); un.type = 'button';
-      un.addEventListener('click', function () { x.succes = h.avant.succes; x.evalue = h.avant.evalue; data.hist = data.hist.filter(function (z) { return z !== h; }); if (data.jours && data.jours[h.jour]) data.jours[h.jour] = Math.max(0, data.jours[h.jour] - mins(x)); save(); render(); toast('Remis comme avant.'); });
+      un.addEventListener('click', function () { x.succes = h.avant.succes; x.evalue = h.avant.evalue; data.hist = data.hist.filter(function (z) { return z !== h; }); save(); render(); toast('Remis comme avant.'); });
       row.appendChild(sel); row.appendChild(un); c.appendChild(row); det.appendChild(c);
     });
     return det;
@@ -205,6 +215,13 @@
   function renderMats() {
     var box = $('v-mats'); box.textContent = '';
     box.appendChild(el('p', 'muted', 'La date d’examen déclenche le mode examen (voir Réglages). Laisse vide s’il n’y a pas d’examen.'));
+    var od = el('div', 'chips'); od.style.padding = '0 0 10px'; od.appendChild(el('span', 'muted', 'Ordre des semestres :'));
+    [['alpha', 'A → Z'], ['manuel', 'Manuel (↑ ↓)']].forEach(function (a) {
+      var b = el('button', 'chip', a[1]); b.type = 'button'; b.setAttribute('aria-pressed', data.reglages.ordreSem === a[0] ? 'true' : 'false');
+      b.addEventListener('click', function () { if (a[0] === 'manuel' && !(data.reglages.semOrdre || []).length) data.reglages.semOrdre = semestres(); data.reglages.ordreSem = a[0]; save(); render(); });
+      od.appendChild(b);
+    });
+    box.appendChild(od);
     semestres().forEach(function (s) {
       var det = document.createElement('details'); det.appendChild(el('summary', '', s));
       var tb = document.createElement('table'); tb.className = 'tbl';
@@ -227,6 +244,11 @@
       var ren = el('button', 'plain', 'Renommer ce semestre'); ren.type = 'button'; ren.style.margin = '8px 8px 0 0';
       ren.addEventListener('click', function () { renameSem(s); });
       det.appendChild(ren);
+      if (data.reglages.ordreSem !== 'alpha') {
+        var up = el('button', 'plain', '↑ Monter'), dn = el('button', 'plain', '↓ Descendre'); up.type = dn.type = 'button'; up.style.margin = dn.style.margin = '8px 8px 0 0';
+        up.addEventListener('click', function () { moveSem(s, -1); }); dn.addEventListener('click', function () { moveSem(s, 1); });
+        det.appendChild(up); det.appendChild(dn);
+      }
       var add = el('button', 'plain', '+ Ajouter une matière'); add.type = 'button'; add.style.marginTop = '8px';
       add.addEventListener('click', function () {
         var n = window.prompt('Nom de la matière pour ' + s + ' :'); if (!n || !n.trim()) return;
@@ -244,7 +266,7 @@
   }
 
   /* ---------- vue : tableau de bord ---------- */
-  var C_LATE = '#7a1f3d', C_EXAM = '#e0527f', C_NORM = '#f1b3c6';
+  var C_LATE = '#7a1f3d', C_EXAM = '#f1b3c6', C_NORM = '#e0527f';
   var C_NIV = ['#7a1f3d', '#a33c5e', '#cc597f', '#e57d9f', '#f0a9c0', '#f8d3e0'];
   var JS = ['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam'];
   function dcard(title, extra) { var c = el('div', 'dcard' + (extra ? ' ' + extra : '')); if (title) c.appendChild(el('h2', '', title)); return c; }
@@ -286,13 +308,30 @@
     });
     c0.appendChild(cols); box.appendChild(c0);
 
+    /* moyenne par matière : même nom fusionné, semestres cochés */
+    var cm = dcard('Moyenne par matière · semestres cochés'), gm = {};
+    L.forEach(function (x) { var k = x.matiere.trim().toLowerCase(); var g = gm[k] = gm[k] || { nom: x.matiere, s: 0, n: 0, sem: {}, nt: [] }; g.s += x.succes || 0; g.n++; g.sem[x.semestre] = 1; });
+    matsV.forEach(function (m) { var g = gm[m.nom.trim().toLowerCase()]; if (g && typeof m.note === 'number') g.nt.push(m.note); });
+    var lm = Object.keys(gm).map(function (k) { var g = gm[k]; g.a = g.s / g.n; g.ns = Object.keys(g.sem).length; return g; }).sort(function (a, b) { return b.a - a.a; });
+    if (!lm.length) cm.appendChild(el('p', 'muted', 'Aucun exercice dans les semestres cochés.'));
+    else {
+      cm.appendChild(el('p', 'muted', 'Niveau moyen des exos (sur 5) ; les matières du même nom sont regroupées.'));
+      var lw = el('div', 'mlist');
+      lm.forEach(function (g) {
+        var r = el('div', 'mrow'); r.appendChild(el('span', 'mn', g.nom + (g.ns > 1 ? ' (' + g.ns + ' sem.)' : '')));
+        var bar = el('div', 'bar'), f = el('i'); f.style.width = Math.min(100, Math.round(g.a / 5 * 100)) + '%'; f.style.background = scale(g.a); bar.appendChild(f); r.appendChild(bar); r.appendChild(el('b', '', fmt1(Math.round(g.a * 10) / 10))); lw.appendChild(r);
+      });
+      cm.appendChild(lw);
+    }
+    box.appendChild(cm);
+
     /* charge */
     var c1 = dcard('Charge de révision à venir');
     var lg = el('div', 'legend');
-    [['En retard', C_LATE], ['Examen', C_EXAM], ['Prévu', C_NORM]].forEach(function (a) { var sp = el('span'); var i = el('i'); i.style.background = a[1]; sp.appendChild(i); sp.appendChild(document.createTextNode(a[0])); lg.appendChild(sp); });
+    [['En retard', C_LATE], ['Prévu', C_NORM], ['Examen', C_EXAM]].forEach(function (a) { var sp = el('span'); var i = el('i'); i.style.background = a[1]; sp.appendChild(i); sp.appendChild(document.createTextNode(a[0])); lg.appendChild(sp); });
     c1.appendChild(lg);
-    var cv = document.createElement('canvas'); c1.appendChild(cv);
-    var rep = plan().list.filter(function (o) { return !o.in; }).length; c1.appendChild(el('p', 'muted', 'Chaque jour respecte ton planning de la semaine (Réglages) : ce qui ne tient pas est reporté au jour suivant.')); box.appendChild(c1);
+    var cv = document.createElement('canvas'), sc = el('div', 'scrollx'); sc.appendChild(cv); c1.appendChild(sc);
+    var rep = plan().list.filter(function (o) { return !o.in; }).length; c1.appendChild(el('p', 'muted', 'Fais défiler vers la gauche pour voir les semaines suivantes. Chaque jour respecte ton planning (Réglages) : ce qui ne tient pas est reporté.')); box.appendChild(c1);
     drawCharge(cv, L, t);
 
     box.appendChild(habitCard());
@@ -302,9 +341,9 @@
     if (!fut.length) c3.appendChild(el('p', 'muted', 'Aucune date d’examen à venir (onglet Examens).'));
     else {
       var tb = document.createElement('table'); tb.className = 'tbl dark';
-      var hd = document.createElement('tr'); ['Matière', 'Date', 'Dans', 'Niveau'].forEach(function (h) { hd.appendChild(el('th', '', h)); }); tb.appendChild(hd);
+      var hd = document.createElement('tr'); ['Semestre', 'Matière', 'Date', 'Dans', 'Niveau'].forEach(function (h) { hd.appendChild(el('th', '', h)); }); tb.appendChild(hd);
       fut.slice(0, 10).forEach(function (m) {
-        var tr = document.createElement('tr'); tr.appendChild(el('td', '', m.nom));
+        var tr = document.createElement('tr'); tr.appendChild(el('td', 'sem', m.semestre)); tr.appendChild(el('td', '', m.nom));
         var dn = dnum(m.examen); tr.appendChild(el('td', 'c', fromNum(dn).slice(0, 6) + fromNum(dn).slice(8)));
         tr.appendChild(el('td', 'c b', 'J-' + (dn - t)));
         var es = L.filter(function (x) { return x.semestre === m.semestre && x.matiere === m.nom; }), av = es.length ? es.reduce(function (a, x) { return a + (x.succes || 0); }, 0) / es.length : null;
@@ -324,59 +363,75 @@
     drawDonut(cv2, L);
   }
 
-  function faitsDu(iso) {
-    var c = 0; data.ex.forEach(function (x) { if (x.evalue === iso && visible(x)) c += mins(x); });
-    return Math.max(c, (data.jours && data.jours[iso]) || 0);
+  function faitsMap() {
+    var map = {}, vu = {};
+    (data.hist || []).forEach(function (h) {
+      var x = data.ex.filter(function (e) { return e.id === h.id; })[0]; vu[h.id] = 1;
+      if (x && !visible(x)) return;
+      map[h.jour] = (map[h.jour] || 0) + (h.m || (x ? mins(x) : data.reglages.minutesDefaut));
+    });
+    data.ex.forEach(function (x) { if (!vu[x.id] && x.evalue && visible(x)) map[x.evalue] = (map[x.evalue] || 0) + mins(x); });
+    return map;
   }
   function dur(m) { return m >= 60 ? Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + ('0' + m % 60).slice(-2) : '') : m + ' min'; }
+  var habitYear = new Date().getFullYear();
   function habitCard() {
-    var c = dcard('Régularité · temps de révision par jour'), W = 15, t = TODAY(), wd = (new Date(t * DAY).getUTCDay() + 6) % 7, start = t - wd - (W - 1) * 7;
-    var vals = [], mx = 1; for (var i = 0; i < W * 7; i++) { var dn = start + i, v = dn > t ? -1 : faitsDu(new Date(dn * DAY).toISOString().slice(0, 10)); vals.push(v); if (v > mx) mx = v; }
+    var c = dcard('Régularité · temps de révision par jour'), t = TODAY(), Y = habitYear;
+    var nav = el('div', 'row2'); nav.style.marginBottom = '8px';
+    var pv = el('button', 'plain', '‹'), nx = el('button', 'plain', '›'); pv.type = nx.type = 'button';
+    pv.addEventListener('click', function () { habitYear--; renderDash(); }); nx.addEventListener('click', function () { habitYear++; renderDash(); });
+    nav.appendChild(pv); nav.appendChild(el('b', '', String(Y))); nav.appendChild(nx); c.appendChild(nav);
+    var j1 = Date.UTC(Y, 0, 1) / DAY, j31 = Date.UTC(Y, 11, 31) / DAY, wd1 = (new Date(j1 * DAY).getUTCDay() + 6) % 7, start = j1 - wd1, W = Math.ceil((j31 - start + 1) / 7);
+    var FM = faitsMap(), mx = 1, tot = 0;
+    for (var d = j1; d <= j31; d++) { var v0 = FM[new Date(d * DAY).toISOString().slice(0, 10)] || 0; tot += v0; if (v0 > mx) mx = v0; }
     var cols = ['#f6e9ee', '#f9d3e0', '#f0a9c0', '#e0678f', '#a33c5e', '#7a1f3d'];
     function lvl(v) { if (v <= 0) return 0; var f = v / mx; return f > .75 ? 5 : f > .5 ? 4 : f > .3 ? 3 : f > .12 ? 2 : 1; }
     var wrap = el('div', 'habit'), lab = el('div', 'hl');
     ['L', 'M', 'M', 'J', 'V', 'S', 'D'].forEach(function (z) { lab.appendChild(el('span', '', z)); }); wrap.appendChild(lab);
-    var grid = el('div', 'hg'); grid.style.gridTemplateColumns = 'repeat(' + W + ',1fr)';
-    var mois = ['janv', 'févr', 'mars', 'avr', 'mai', 'juin', 'juil', 'août', 'sept', 'oct', 'nov', 'déc'], last = -1;
-    for (var w = 0; w < W; w++) { var d0 = new Date((start + w * 7) * DAY), m = d0.getUTCMonth(); var ml = el('span', 'hm', m !== last ? mois[m] : ''); last = m; ml.style.gridColumn = (w + 1); ml.style.gridRow = 1; grid.appendChild(ml); }
+    var sc = el('div', 'scrollx'), grid = el('div', 'hg'); grid.style.gridTemplateColumns = 'repeat(' + W + ',17px)';
+    var mois = ['janv', 'févr', 'mars', 'avr', 'mai', 'juin', 'juil', 'août', 'sept', 'oct', 'nov', 'déc'], last = -1, todayCell = null;
+    for (var w = 0; w < W; w++) { var d0 = new Date((start + w * 7 + 6) * DAY), m = d0.getUTCFullYear() === Y ? d0.getUTCMonth() : -1; var ml = el('span', 'hm', m >= 0 && m !== last ? mois[m] : ''); if (m >= 0) last = m; ml.style.gridColumn = (w + 1); ml.style.gridRow = 1; grid.appendChild(ml); }
     for (var w2 = 0; w2 < W; w2++) for (var r = 0; r < 7; r++) {
-      var idx = w2 * 7 + r, v2 = vals[idx], dn2 = start + idx, cell = el('i', 'hc'); cell.style.gridColumn = (w2 + 1); cell.style.gridRow = (r + 2);
-      if (v2 < 0) cell.style.visibility = 'hidden'; else {
-        cell.style.background = cols[lvl(v2)]; if (dn2 === t) cell.style.outline = '2px solid #7a1f3d';
-        (function (n, vv) { cell.addEventListener('click', function () { toast(fromNum(n).slice(0, 5) + ' : ' + (vv ? dur(vv) : 'rien de fait')); }); })(dn2, v2);
+      var dn2 = start + w2 * 7 + r, cell = el('i', 'hc'); cell.style.gridColumn = (w2 + 1); cell.style.gridRow = (r + 2);
+      if (dn2 < j1 || dn2 > j31) cell.style.visibility = 'hidden'; else {
+        var vv = FM[new Date(dn2 * DAY).toISOString().slice(0, 10)] || 0;
+        cell.style.background = dn2 > t ? '#faf3f6' : cols[lvl(vv)]; if (dn2 === t) { cell.style.outline = '2px solid #7a1f3d'; todayCell = cell; }
+        (function (n, v2) { cell.addEventListener('click', function () { toast(fromNum(n) + ' : ' + (v2 ? dur(v2) : 'rien de fait')); }); })(dn2, vv);
       }
       grid.appendChild(cell);
     }
-    wrap.appendChild(grid); c.appendChild(wrap);
-    var lg = el('div', 'legend'); lg.appendChild(document.createTextNode('Moins')); cols.forEach(function (k) { var i2 = el('i'); i2.style.background = k; lg.appendChild(i2); }); lg.appendChild(document.createTextNode('Plus (jusqu’à ' + dur(mx) + ')'));
+    sc.appendChild(grid); wrap.appendChild(sc); c.appendChild(wrap);
+    setTimeout(function () { if (todayCell) sc.scrollLeft = Math.max(0, todayCell.offsetLeft - sc.clientWidth + 40); else if (Y < new Date().getFullYear()) sc.scrollLeft = sc.scrollWidth; }, 0);
+    var lg = el('div', 'legend'); lg.appendChild(document.createTextNode('Moins')); cols.forEach(function (k) { var i2 = el('i'); i2.style.background = k; lg.appendChild(i2); }); lg.appendChild(document.createTextNode('Plus (jusqu’à ' + dur(mx) + ') · total ' + dur(tot)));
     c.appendChild(lg); return c;
   }
-
   function drawDonut(cv, L) {
     var all = [0, 0, 0, 0, 0, 0], inn = [0, 0, 0, 0, 0, 0], sum = 0;
     L.forEach(function (x) { var n = Math.min(5, x.succes || 0); all[n]++; if (modeExam(x)) inn[n]++; sum += n; });
-    var w = cv.clientWidth || 320, h = 230, dpr = window.devicePixelRatio || 1;
+    var w = cv.clientWidth || 320, h = Math.round(Math.min(Math.max(230, w * 0.8), 480)), dpr = window.devicePixelRatio || 1;
     cv.width = w * dpr; cv.height = h * dpr; cv.style.height = h + 'px';
     var g = cv.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, w, h);
-    var cx = w / 2, cy = h / 2, R1 = 100, R0 = 66, R2 = 62, R3 = 38;
+    var cx = w / 2, cy = h / 2, R1 = h / 2 - 8, K = R1 / 100, R0 = R1 * .66, R2 = R1 * .62, R3 = R1 * .38;
     function ring(vals, ra, rb, hatch) {
       var tot = vals.reduce(function (a, b) { return a + b; }, 0), a0 = -Math.PI / 2;
       if (!tot) { g.beginPath(); g.arc(cx, cy, (ra + rb) / 2, 0, 7); g.lineWidth = ra - rb; g.strokeStyle = '#f6e3ea'; g.stroke(); return; }
       vals.forEach(function (v, i) {
         if (!v) return; var a1 = a0 + v / tot * Math.PI * 2;
         g.beginPath(); g.arc(cx, cy, ra, a0, a1); g.arc(cx, cy, rb, a1, a0, true); g.closePath();
-        g.fillStyle = C_NIV[i]; g.globalAlpha = hatch ? .65 : 1; g.fill(); g.globalAlpha = 1; g.lineWidth = 2; g.strokeStyle = '#fff'; g.stroke();
-        if (v / tot > .05) { var am = (a0 + a1) / 2, rr = (ra + rb) / 2; g.fillStyle = i >= 4 ? '#5c1530' : '#fff'; g.font = 'bold 12px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(v, cx + Math.cos(am) * rr, cy + Math.sin(am) * rr); }
+        g.fillStyle = C_NIV[i]; g.fill();
+        if (hatch) { g.save(); g.clip(); g.strokeStyle = 'rgba(255,255,255,.45)'; g.lineWidth = 1.5; for (var hx = -h; hx < w + h; hx += 7) { g.beginPath(); g.moveTo(hx, 0); g.lineTo(hx + h, h); g.stroke(); } g.restore(); }
+        g.lineWidth = 2; g.strokeStyle = '#fff'; g.beginPath(); g.arc(cx, cy, ra, a0, a1); g.arc(cx, cy, rb, a1, a0, true); g.closePath(); g.stroke();
+        if (v / tot > .05) { var am = (a0 + a1) / 2, rr = (ra + rb) / 2; g.fillStyle = i >= 4 ? '#5c1530' : '#fff'; g.font = 'bold ' + Math.round(12 * K) + 'px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(v, cx + Math.cos(am) * rr, cy + Math.sin(am) * rr); }
         a0 = a1;
       });
     }
     ring(all, R1, R0, false); ring(inn, R2, R3, true);
-    g.fillStyle = '#7a1f3d'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = 'bold 22px system-ui'; g.fillText(L.length ? fmt1(sum / L.length) : '–', cx, cy - 6);
-    g.fillStyle = '#8a6573'; g.font = '10px system-ui'; g.fillText('moy. sur 5', cx, cy + 12);
+    g.fillStyle = '#7a1f3d'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = 'bold ' + Math.round(22 * K) + 'px system-ui'; g.fillText(L.length ? fmt1(sum / L.length) : '–', cx, cy - 6 * K);
+    g.fillStyle = '#8a6573'; g.font = Math.round(10 * K) + 'px system-ui'; g.fillText('moy. sur 5', cx, cy + 12 * K);
     
   }
   function drawCharge(cv, L, t) {
-    var N = 14, late = [], ex = [], nm = [], cnt = []; for (var i = 0; i < N; i++) { late.push(0); ex.push(0); nm.push(0); cnt.push(0); }
+    var N = 42, late = [], ex = [], nm = [], cnt = []; for (var i = 0; i < N; i++) { late.push(0); ex.push(0); nm.push(0); cnt.push(0); }
     var cand = [];
     data.ex.forEach(function (x, i) { if (visible(x) && x.evalue) cand.push({ x: x, r: revision(x), ex: modeExam(x), i: i, m: mins(x) }); });
     cand.sort(function (a, b) {
@@ -396,8 +451,8 @@
         }
       });
     }
-    var w = cv.clientWidth || 320, h = 210, dpr = window.devicePixelRatio || 1;
-    cv.width = w * dpr; cv.height = h * dpr; cv.style.height = h + 'px';
+    var w = 34 + N * 40 + 4, h = 210, dpr = window.devicePixelRatio || 1;
+    cv.width = w * dpr; cv.height = h * dpr; cv.style.height = h + 'px'; cv.style.width = w + 'px';
     var g = cv.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, w, h);
     var tot = late.map(function (_, i) { return late[i] + ex[i] + nm[i]; }), mx = Math.max.apply(null, tot.concat([60]));
     var step = mx > 600 ? 240 : mx > 240 ? 120 : 60; mx = Math.ceil(mx / step) * step;
@@ -407,7 +462,7 @@
     g.textAlign = 'center';
     for (var j = 0; j < N; j++) {
       var x0 = L0 + j * bw + bw * 0.14, ww = bw * 0.72, yy = B;
-      [[late[j], C_LATE], [ex[j], C_EXAM], [nm[j], C_NORM]].forEach(function (s) {
+      [[late[j], C_LATE], [nm[j], C_NORM], [ex[j], C_EXAM]].forEach(function (s) {
         if (!s[0]) return; var hh = (B - T) * s[0] / mx; g.fillStyle = s[1]; g.fillRect(x0, yy - hh, ww, hh); yy -= hh;
       });
       var dd = new Date((t + j) * DAY), cx = x0 + ww / 2; g.fillStyle = '#5c1530'; g.font = '9px system-ui';
