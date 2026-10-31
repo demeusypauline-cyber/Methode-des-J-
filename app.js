@@ -4,7 +4,7 @@
   var DAY = 86400000;
   var NIV = ['Échec total', 'Beaucoup d’erreurs', 'Compréhension partielle', 'Compréhension correcte', 'Presque parfait', 'Maîtrise totale'];
   var JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-  var DEF = { intervalles: [2, 4, 10, 25, 35, 50, 70, 90, 110, 130, 150, 170], minutesDefaut: 5, debutExam: 50, seuilButoire: 15, butoireSi: 5, butoireSinon: 0, planning: [60, 60, 30, 180, 30, 180, 30], semestres: [], ordreSem: 'manuel', semOrdre: [], dashOrdre: [], dashCache: [], pasApres5: 20 };
+  var DEF = { intervalles: [2, 4, 10, 25, 35, 50, 70, 90, 110, 130, 150, 170], minutesDefaut: 5, debutExam: 50, seuilButoire: 15, butoireSi: 5, butoireSinon: 0, planning: [60, 60, 30, 180, 30, 180, 30], semestres: [], ordreSem: 'manuel', semOrdre: [], dashOrdre: [], dashCache: [], pasApres5: 20, oubliMin: 3 };
   var data = { ex: [], mats: [], reglages: JSON.parse(JSON.stringify(DEF)) };
   var view = 'today', editingId = null, doingId = null, shown = 120;
 
@@ -436,22 +436,20 @@
     var c3 = dcard('Prochains examens');
     if (!fut.length) c3.appendChild(el('p', 'muted', 'Aucune date d’examen à venir (onglet Matières).'));
     else {
-      var tb = document.createElement('table'); tb.className = 'tbl dark';
-      var hd = document.createElement('tr'); ['Semestre', 'Matière', 'Date', 'Dans', 'Niveau'].forEach(function (h) { hd.appendChild(el('th', '', h)); }); tb.appendChild(hd);
+      var tb = el('div', 'exl');
       fut.forEach(function (m) {
-        var tr = document.createElement('tr'); tr.appendChild(el('td', 'sem', m.semestre)); tr.appendChild(el('td', '', m.nom));
-        var dn = dnum(m.examen); tr.appendChild(el('td', 'c', fromNum(dn).slice(0, 6) + fromNum(dn).slice(8)));
-        tr.appendChild(el('td', 'c b', 'J-' + (dn - t)));
+        var dn = dnum(m.examen), J = dn - t, Rg = data.reglages, X = J > Rg.seuilButoire ? Rg.butoireSi : Rg.butoireSinon;
+        var need = Math.round(Math.max(0, Math.min(5, 5 * (1 - Math.max(0, J - X) / Math.max(1, Rg.debutExam)))) * 10) / 10;
         var es = L.filter(function (x) { return x.semestre === m.semestre && x.matiere === m.nom; }), av = es.length ? es.reduce(function (a, x) { return a + lvl(x); }, 0) / es.length : null;
-        var nt = el('td', 'c n'); if (av !== null) nt.appendChild(nivBadge(av, 'sm'));
-        tr.appendChild(nt); tr.className = 'top'; tb.appendChild(tr);
-        var J = dn - t, Rg = data.reglages, X = J > Rg.seuilButoire ? Rg.butoireSi : Rg.butoireSinon, need = Math.round(Math.max(0, Math.min(5, 5 * (1 - Math.max(0, J - X) / Math.max(1, Rg.debutExam)))) * 10) / 10;
-        var pr = document.createElement('tr'), pd = document.createElement('td'); pd.colSpan = 5; pd.className = 'prog';
+        var row = el('div', 'exr'), mid = el('div', 'exm');
+        var top = el('div', 'ext'); top.appendChild(el('span', 'chip', m.semestre)); top.appendChild(el('b', 'mn', m.nom)); mid.appendChild(top);
         var trk = el('div', 'trk'), fl = el('i', 'fl'); fl.style.width = Math.min(100, need / 5 * 100) + '%'; trk.appendChild(fl);
         for (var q = 1; q < 5; q++) { var tk = el('b', 'tk'); tk.style.left = (q * 20) + '%'; trk.appendChild(tk); }
-        if (av !== null) { var me = el('u', 'me'); me.style.left = Math.min(100, av / 5 * 100) + '%'; me.className = 'me' + (av + 0.05 < need ? ' behind' : ''); trk.appendChild(me); }
-        var lab = el('span', 'plab', 'Attendu ' + fmt1(need) + ' · Toi ' + (av === null ? '–' : fmt1(Math.round(av * 10) / 10)));
-        pd.appendChild(trk); pd.appendChild(lab); pr.appendChild(pd); tb.appendChild(pr);
+        if (av !== null) { var me = el('u', 'me'); me.style.left = Math.min(100, av / 5 * 100) + '%'; trk.appendChild(me); }
+        mid.appendChild(trk); row.appendChild(mid);
+        var jd = el('div', 'exj'); jd.appendChild(el('b', 'jj', 'J-' + J)); jd.appendChild(el('span', 'dd', fromNum(dn).slice(0, 6) + fromNum(dn).slice(8))); row.appendChild(jd);
+        var nt = el('div', 'exn'); if (av !== null) nt.appendChild(nivBadge(av, 'sm')); row.appendChild(nt);
+        tb.appendChild(row);
       });
       var sc = el('div', 'mscroll'); sc.appendChild(tb); c3.appendChild(sc);
     }
@@ -463,8 +461,21 @@
     var lg2 = el('div', 'legend'); [0, 1, 2, 3, 4, 5].forEach(function (i) { var sp = el('span'); var ic = el('i'); ic.style.background = C_NIV[i]; sp.appendChild(ic); sp.appendChild(document.createTextNode(i === 5 ? '5+' : String(i))); lg2.appendChild(sp); });
     c2.appendChild(lg2); cards.donut = c2; draws.donut = function () { drawDonut(cv2, L); };
 
+    var c4 = dcard('Temps de révision par tranche de J');
+    var cv4 = document.createElement('canvas'); c4.appendChild(cv4);
+    var lg4 = el('div', 'legend'); J_LAB.forEach(function (n, i) { var sp = el('span'); var ic = el('i'); ic.style.background = C_J[i]; sp.appendChild(ic); sp.appendChild(document.createTextNode(n)); lg4.appendChild(sp); });
+    c4.appendChild(lg4); cards.jring = c4; draws.jring = function () { drawDonut(cv4, L, true); };
+
+    var c5 = dcard('Courbe de l’oubli');
+    var cv5 = document.createElement('canvas'); c5.appendChild(cv5);
+    var lg5 = el('div', 'legend'); [['#e0527f55', 'Chaque révision'], ['#7a1f3d', 'Moyenne lissée (100 derniers jours)'], ['#f9d3e0', 'Objectif (4,5 à 5)']].forEach(function (a) { var sp = el('span'); var ic = el('i'); ic.style.background = a[0]; sp.appendChild(ic); sp.appendChild(document.createTextNode(a[1])); lg5.appendChild(sp); });
+    var fl5 = el('div', 'seg'); [[0, 'Toutes les révisions'], [2, 'Exos déjà connus (note préc. ≥ 2)'], [3, 'Bien connus (≥ 3)']].forEach(function (o) {
+      var b = el('button', (data.reglages.oubliMin || 0) === o[0] ? 'on' : '', o[1]); b.type = 'button';
+      b.addEventListener('click', function () { data.reglages.oubliMin = o[0]; save(); renderDash(); }); fl5.appendChild(b); });
+    c5.insertBefore(fl5, cv5);
+    c5.appendChild(lg5); cards.oubli = c5; draws.oubli = function () { drawOubli(cv5); }; c5.classList.add('wide');
     cards.charge.classList.add('wide'); cards.habit.classList.add('wide');
-    var R = data.reglages, keys = ['sem', 'mat', 'charge', 'habit', 'exam', 'donut'];
+    var R = data.reglages, keys = ['sem', 'mat', 'charge', 'habit', 'exam', 'donut', 'jring', 'oubli'];
     var ord = (R.dashOrdre || []).filter(function (k) { return keys.indexOf(k) >= 0; }); keys.forEach(function (k) { if (ord.indexOf(k) < 0) { if (k === 'ue' && ord.indexOf('sem') >= 0) ord.splice(ord.indexOf('sem') + 1, 0, k); else ord.push(k); } });
     var hid = R.dashCache || [];
     var ed = el('button', 'editbtn' + (dashEdit ? ' on' : '')); ed.type = 'button'; ed.setAttribute('aria-label', dashEdit ? 'Terminer' : 'Modifier l’affichage');
@@ -554,9 +565,12 @@
     var lg = el('div', 'legend'); ['0', '≤ 30 min', '≤ 1 h', '≤ 2 h', '≤ 4 h', '> 4 h (max 24 h)'].forEach(function (tx, i3) { var sp = el('span'), i2 = el('i'); i2.style.background = cols[i3]; sp.appendChild(i2); sp.appendChild(document.createTextNode(tx)); lg.appendChild(sp); }); 
     c.appendChild(lg); return c;
   }
-  function drawDonut(cv, L) {
-    var all = [0, 0, 0, 0, 0, 0], inn = [0, 0, 0, 0, 0, 0], sum = 0;
-    L.forEach(function (x) { var n = Math.min(5, x.succes || 0); all[n]++; if (modeExam(x)) inn[n]++; sum += n; });
+  function tfmt(m) { m = Math.round(m); return m < 60 ? m + ' min' : (Math.round(m / 6) / 10).toString().replace('.', ',') + ' h'; }
+  var J_LAB = ['En retard', 'J0', 'J1-3', 'J4-10', 'J11-25', 'J26-50', 'J50+'], C_J = ['#7a1f3d', '#9a3458', '#b84a70', '#d2658b', '#e684a6', '#f2a9c0', '#f8d3e0'];
+  function jIdx(x) { var d = revision(x) - TODAY(); return d < 0 ? 0 : d === 0 ? 1 : d <= 3 ? 2 : d <= 10 ? 3 : d <= 25 ? 4 : d <= 50 ? 5 : 6; }
+  function drawDonut(cv, L, J) {
+    var NB = J ? 7 : 6, COL = J ? C_J : C_NIV, all = [], inn = [], sum = 0; for (var zz = 0; zz < NB; zz++) { all.push(0); inn.push(0); }
+    L.forEach(function (x) { var n = J ? jIdx(x) : Math.min(5, x.succes || 0), wt = J ? mins(x) : 1; all[n] += wt; if (modeExam(x)) inn[n] += wt; sum += J ? wt : n; });
     var w = cv.clientWidth || 320, h = Math.round(Math.min(Math.max(230, w * 0.8), 480)), dpr = window.devicePixelRatio || 1;
     cv.width = w * dpr; cv.height = h * dpr; cv.style.height = h + 'px';
     var g = cv.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, w, h);
@@ -567,17 +581,57 @@
       vals.forEach(function (v, i) {
         if (!v) return; var a1 = a0 + v / tot * Math.PI * 2;
         g.beginPath(); g.arc(cx, cy, ra, a0, a1); g.arc(cx, cy, rb, a1, a0, true); g.closePath();
-        g.fillStyle = C_NIV[i]; g.fill();
+        g.fillStyle = COL[i]; g.fill();
         if (hatch) { g.save(); g.clip(); waves(g, cx - ra, cy - ra, ra * 2, ra * 2, 'rgba(249,211,224,.9)', 7 * K / 1.2, 1.8 * K / 1.2, 1.2); g.restore(); }
         g.lineWidth = 2; g.strokeStyle = '#fff'; g.beginPath(); g.arc(cx, cy, ra, a0, a1); g.arc(cx, cy, rb, a1, a0, true); g.closePath(); g.stroke();
-        if (v / tot > .05) { var am = (a0 + a1) / 2, rr = (ra + rb) / 2; g.fillStyle = i >= 4 ? '#5c1530' : '#fff'; g.font = 'bold ' + Math.round(12 * K) + 'px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(v, cx + Math.cos(am) * rr, cy + Math.sin(am) * rr); }
+        if (v / tot > (J && rb < R0 * .9 ? .09 : .05)) { var am = (a0 + a1) / 2, rr = (ra + rb) / 2; g.fillStyle = i >= (J ? 5 : 4) ? '#5c1530' : '#fff'; g.font = 'bold ' + Math.round((J && rb < R0 * .9 ? 9 : 12) * K) + 'px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(J ? tfmt(v).replace(' ', '') : v, cx + Math.cos(am) * rr, cy + Math.sin(am) * rr); }
         a0 = a1;
       });
     }
     ring(all, R1, R0, false); ring(inn, R2, R3, true);
-    g.fillStyle = '#7a1f3d'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = 'bold ' + Math.round(22 * K) + 'px system-ui'; g.fillText(L.length ? fmt1(sum / L.length) : '–', cx, cy - 6 * K);
-    g.fillStyle = '#8a6573'; g.font = Math.round(10 * K) + 'px system-ui'; g.fillText('moy. sur 5', cx, cy + 12 * K);
+    g.fillStyle = '#7a1f3d'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = 'bold ' + Math.round(22 * K) + 'px system-ui'; g.fillText(J ? tfmt(sum) : (L.length ? fmt1(sum / L.length) : '–'), cx, cy - 6 * K);
+    g.fillStyle = '#8a6573'; g.font = Math.round(10 * K) + 'px system-ui'; g.fillText(J ? 'à réviser' : 'moy. sur 5', cx, cy + 12 * K);
     
+  }
+  /* courbe de l'oubli : note obtenue à chaque révision selon le nombre de jours écoulés depuis la précédente */
+  function oubliPts() {
+    var P = [], lim = TODAY() - 100; (data.hist || []).forEach(function (h) {
+      if (!h.avant || !h.avant.evalue || !h.jour || dnum(h.jour) < lim || (h.avant.succes || 0) < (data.reglages.oubliMin || 0)) return; var g = dnum(h.jour) - dnum(h.avant.evalue);
+      if (g >= 0 && g <= 100 && typeof h.niveau === 'number') P.push({ g: g, n: Math.min(5, h.niveau) });
+    }); return P;
+  }
+  function drawOubli(cv) {
+    var P = oubliPts(), w = cv.clientWidth || 320, h = Math.round(Math.min(Math.max(220, w * 0.55), 340)), dpr = window.devicePixelRatio || 1;
+    cv.width = w * dpr; cv.height = h * dpr; cv.style.height = h + 'px';
+    var g = cv.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, w, h);
+    var L0 = 30, R0 = w - 10, T = 14, B = h - 26;
+    function X(d) { return L0 + (R0 - L0) * d / 100; } function Y(v) { return B - (B - T) * v / 5; }
+    g.font = '10px system-ui'; g.textAlign = 'right'; g.fillStyle = '#8a6573'; g.strokeStyle = '#f0dde4'; g.lineWidth = 1;
+    for (var v = 0; v <= 5; v++) { g.beginPath(); g.moveTo(L0, Y(v)); g.lineTo(R0, Y(v)); g.stroke(); g.fillText(v, L0 - 5, Y(v) + 3); }
+    g.textAlign = 'center'; [0, 10, 25, 50, 75, 100].forEach(function (d) { g.fillText(d + ' j', X(d), B + 15); });
+    g.fillStyle = 'rgba(249,211,224,.55)'; g.fillRect(L0, Y(5), R0 - L0, Y(4.5) - Y(5));
+    /* J idéaux */
+    var iv = data.reglages.intervalles.slice(0, 6); g.setLineDash([3, 3]); g.strokeStyle = '#e0a3b8'; iv.forEach(function (d) { if (d <= 100) { g.beginPath(); g.moveTo(X(d), T); g.lineTo(X(d), B); g.stroke(); g.fillStyle = '#b55a7c'; g.fillText('J' + d, X(d), T - 3); } }); g.setLineDash([]);
+    if (!P.length) { g.fillStyle = '#8a6573'; g.font = '13px system-ui'; g.textAlign = 'center'; g.fillText('Pas encore de mesure', w / 2, (T + B) / 2); return; }
+    P.forEach(function (p) { g.fillStyle = 'rgba(224,82,127,.28)'; g.beginPath(); g.arc(X(p.g), Y(p.n), 3, 0, 7); g.fill(); });
+    var lastBx = -99;
+    iv.forEach(function (d) {
+      if (d > 100) return; var tol = Math.max(1, Math.round(d * 0.2)), q = P.filter(function (p) { return Math.abs(p.g - d) <= tol; });
+      if (!q.length) return; var m = q.reduce(function (a, p) { return a + p.n; }, 0) / q.length, bx = Math.min(R0 - 16, Math.max(L0 + 16, X(d))), by = B - 12; if (bx - lastBx < 34) by -= 22; lastBx = bx;
+      g.fillStyle = scale(m); g.beginPath(); if (g.roundRect) g.roundRect(bx - 16, by - 9, 32, 18, 9); else g.rect(bx - 16, by - 9, 32, 18); g.fill();
+      g.fillStyle = m < 3.2 ? '#fff' : '#5c1530'; g.font = 'bold 11px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(fmt1(Math.round(m * 10) / 10), bx, by); g.textBaseline = 'alphabetic';
+    });
+    /* moyenne lissée : chaque jour de 0 à 100 = moyenne pondérée des révisions voisines (noyau gaussien) */
+    var pts = [], sg = 7;
+    for (var d = 0; d <= 100; d += 1) {
+      var sw = 0, sv = 0; P.forEach(function (p) { var z = (p.g - d) / sg, wgt = Math.exp(-z * z / 2); sw += wgt; sv += wgt * p.n; });
+      if (sw >= 1.2) pts.push({ x: d, y: sv / sw });
+    }
+    if (pts.length > 1) {
+      g.beginPath(); pts.forEach(function (p, i) { if (i) g.lineTo(X(p.x), Y(p.y)); else g.moveTo(X(p.x), Y(p.y)); });
+      g.lineTo(X(pts[pts.length - 1].x), B); g.lineTo(X(pts[0].x), B); g.closePath(); g.fillStyle = 'rgba(122,31,61,.08)'; g.fill();
+      g.strokeStyle = '#7a1f3d'; g.lineWidth = 3; g.lineJoin = 'round'; g.lineCap = 'round'; g.beginPath(); pts.forEach(function (p, i) { if (i) g.lineTo(X(p.x), Y(p.y)); else g.moveTo(X(p.x), Y(p.y)); }); g.stroke();
+    }
   }
   function drawCharge(cv, L, t) {
     var N = 42, late = [], lateEx = [], ex = [], nm = [], cnt = []; for (var i = 0; i < N; i++) { late.push(0); lateEx.push(0); ex.push(0); nm.push(0); cnt.push(0); }
