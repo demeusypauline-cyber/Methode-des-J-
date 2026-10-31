@@ -569,10 +569,10 @@
       grid.appendChild(cell);
     }
     sc.appendChild(grid); wrap.appendChild(sc); c.appendChild(wrap);
-    function upd() { var wi = Math.max(0, Math.min(W - 1, Math.floor((sc.scrollLeft + sc.clientWidth / 2) / (CW + 3)))), dd = new Date((start + wi * 7 + 3) * DAY); cur.textContent = mois[dd.getUTCMonth()] + ' ' + dd.getUTCFullYear(); }
-    function toToday(smooth) { if (todayCell) sc.scrollTo({ left: Math.max(0, todayCell.offsetLeft - sc.clientWidth / 2), behavior: smooth ? 'smooth' : 'auto' }); }
+    function upd() { var wi = Math.max(0, Math.min(W - 1, Math.floor((sc.scrollLeft + sc.clientWidth - 4) / (CW + 3)))), dd = new Date((start + wi * 7 + 3) * DAY); cur.textContent = mois[dd.getUTCMonth()] + ' ' + dd.getUTCFullYear(); }
+    function toToday(smooth) { if (todayCell) sc.scrollTo({ left: Math.max(0, todayCell.offsetLeft + CW + 2 - sc.clientWidth), behavior: smooth ? 'smooth' : 'auto' }); }
     sc.addEventListener('scroll', upd); bt.addEventListener('click', function () { toToday(true); });
-    setTimeout(function () { toToday(false); upd(); }, 0);
+    setTimeout(function () { if (window._hk != null) sc.scrollLeft = window._hk; else toToday(false); upd(); }, 0);
     var lg = el('div', 'legend'); ['0', '≤ 30 min', '≤ 1 h', '≤ 2 h', '≤ 4 h', '> 4 h (max 24 h)'].forEach(function (tx, i3) { var sp = el('span'), i2 = el('i'); i2.style.background = cols[i3]; sp.appendChild(i2); sp.appendChild(document.createTextNode(tx)); lg.appendChild(sp); }); 
     c.appendChild(lg); return c;
   }
@@ -960,19 +960,40 @@
     u = u.trim(); try { localStorage.setItem(SYNC_KEY, u); } catch (e) { /* ignoré */ } return u;
   }
   var syncBusy = false, syncTimer = null;
+  /* fusion de deux sauvegardes : on garde tout ce qui existe d'un côté ou de l'autre */
+  function mergeData(A, B, aNewer) {
+    var base = JSON.parse(JSON.stringify(aNewer ? A : B)), oth = JSON.parse(JSON.stringify(aNewer ? B : A));
+    var ex = {}; (base.ex || []).forEach(function (x) { ex[x.id] = x; });
+    (oth.ex || []).forEach(function (x) {
+      var y = ex[x.id]; if (!y) { base.ex.push(x); return; }
+      if ((x.evalue || '') > (y.evalue || '')) { var k = base.ex.indexOf(y); base.ex[k] = x; }
+    });
+    var seen = {}; base.hist = base.hist || []; base.hist.forEach(function (h) { seen[h.id + '|' + h.ts] = 1; });
+    (oth.hist || []).forEach(function (h) { if (!seen[h.id + '|' + h.ts]) { seen[h.id + '|' + h.ts] = 1; base.hist.push(h); } });
+    base.hist.sort(function (a, b) { return a.ts - b.ts; });
+    var mm = {}; (base.mats || []).forEach(function (m) { mm[m.semestre + '|' + m.nom] = m; });
+    (oth.mats || []).forEach(function (m) { var y = mm[m.semestre + '|' + m.nom]; if (!y) { base.mats.push(m); return; } Object.keys(m).forEach(function (k) { if ((y[k] === undefined || y[k] === '' || y[k] === null) && m[k] !== undefined) y[k] = m[k]; }); });
+    var uu = {}; base.ues = base.ues || []; base.ues.forEach(function (u) { uu[u.semestre + '|' + u.nom] = 1; });
+    (oth.ues || []).forEach(function (u) { if (!uu[u.semestre + '|' + u.nom]) base.ues.push(u); });
+    return base;
+  }
   function syncCore(url, silent) {
     if (syncBusy) return; syncBusy = true;
     if (!silent) toast('Synchronisation en cours…');
     var localUpd = Number(localStorage.getItem(KEY + '-modif') || 0);
     fetch(url + (url.indexOf('?') < 0 ? '?' : '&') + 't=' + Date.now()).then(function (r) { if (!r.ok) throw new Error('http' + r.status); return r.text(); }).then(function (txt) { var remote; try { remote = JSON.parse(txt); } catch (e) { throw new Error('pasjson'); } return remote; }).then(function (remote) {
-      var rUpd = Number(remote && remote.updated || 0);
-      if (remote && remote.data && rUpd > localUpd) {
-        data = fix(remote.data); try { localStorage.setItem(KEY, JSON.stringify(data)); localStorage.setItem(KEY + '-modif', String(rUpd)); } catch (e) { /* ignoré */ }
+      var rUpd = Number(remote && remote.updated || 0), lastSync = Number(localStorage.getItem(KEY + '-sync') || 0);
+      function post(upd) { return fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ updated: upd, data: data }) }).then(function (r) { return r.json(); }).then(function () { try { localStorage.setItem(KEY + '-sync', String(upd)); } catch (e) { /* ignoré */ } }); }
+      if (remote && remote.data && rUpd > lastSync && localUpd > lastSync && rUpd !== localUpd) {
+        var now = Date.now(); data = fix(mergeData(data, remote.data, localUpd >= rUpd));
+        try { localStorage.setItem(KEY, JSON.stringify(data)); localStorage.setItem(KEY + '-modif', String(now)); } catch (e) { /* ignoré */ }
+        render(); return post(now).then(function () { toast('Fusionné avec ton Drive : rien n’a été perdu.'); });
+      } else if (remote && remote.data && rUpd > localUpd) {
+        data = fix(remote.data); try { localStorage.setItem(KEY, JSON.stringify(data)); localStorage.setItem(KEY + '-modif', String(rUpd)); localStorage.setItem(KEY + '-sync', String(rUpd)); } catch (e) { /* ignoré */ }
         render(); toast('Exercices mis à jour depuis ton Drive.');
       } else if (localUpd > rUpd) {
-        return fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ updated: localUpd, data: data }) })
-          .then(function (r) { return r.json(); }).then(function () { if (!silent) toast('Exercices envoyés vers ton Drive.'); });
-      } else if (!silent) toast('Déjà à jour.');
+        return post(localUpd).then(function () { if (!silent) toast('Exercices envoyés vers ton Drive.'); });
+      } else { try { localStorage.setItem(KEY + '-sync', String(localUpd)); } catch (e) { /* ignoré */ } if (!silent) toast('Déjà à jour.'); }
     }).catch(function (e) { if (!silent) toast(e && e.message === 'pasjson' ? 'L’adresse répond mais pas comme prévu : dans Apps Script, « Qui a accès » doit être « Tout le monde », et l’adresse finir par /exec.' : e && /^http/.test(e.message || '') ? 'Adresse refusée (' + e.message.slice(4) + ') : vérifie qu’elle finit par /exec.' : 'Pas de réponse : vérifie la connexion et l’adresse /exec.'); })
       .then(function () { syncBusy = false; });
   }
@@ -992,8 +1013,24 @@
     if (view === 'today') renderToday(); else if (view === 'exos') renderExos(); else if (view === 'mats') renderMats(); else if (view === 'dash') renderDash(); else renderSet();
   }
 
+  /* garde la position de défilement (page, listes, graphiques, grille) quand on change un filtre ou un affichage */
+  ['renderToday', 'renderExos', 'renderMats', 'renderDash', 'renderSet'].forEach(function (nm) {
+    var orig = eval(nm);
+    var wrapped = function () {
+      var y = window._top ? 0 : window.scrollY; window._top = 0; var sel = '.scrollx, .mlist, .mscroll', els = Array.prototype.slice.call(document.querySelectorAll(sel)), pos = els.map(function (e) { return [e.scrollLeft, e.scrollTop]; });
+      var hab = document.querySelector('.habit .scrollx'); window._hk = hab ? hab.scrollLeft : null;
+      var r = orig.apply(this, arguments);
+      var els2 = document.querySelectorAll(sel); if (els2.length === els.length) Array.prototype.forEach.call(els2, function (e, i) { e.scrollLeft = pos[i][0]; e.scrollTop = pos[i][1]; });
+      window.scrollTo(0, y); var tries = 0, touched = false, stop = function () { touched = true; };
+      window.addEventListener('touchstart', stop, { once: true, passive: true }); window.addEventListener('wheel', stop, { once: true, passive: true });
+      var iv = setInterval(function () { tries++; window._hk = null; if (!touched && Math.abs(window.scrollY - y) > 2) window.scrollTo(0, y); if (touched || tries > 12) clearInterval(iv); }, 40);
+      return r;
+    };
+    if (nm === 'renderToday') renderToday = wrapped; else if (nm === 'renderExos') renderExos = wrapped; else if (nm === 'renderMats') renderMats = wrapped; else if (nm === 'renderDash') renderDash = wrapped; else renderSet = wrapped;
+  });
+
   load();
-  document.querySelectorAll('#tabs button').forEach(function (b) { b.addEventListener('click', function () { try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { /* sans vibration */ } view = b.dataset.view; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } shown = 120; render(); window.scrollTo(0, 0); }); });
+  document.querySelectorAll('#tabs button').forEach(function (b) { b.addEventListener('click', function () { try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { /* sans vibration */ } view = b.dataset.view; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } shown = 120; window._top = 1; render(); window.scrollTo(0, 0); }); });
   $('addBtn').addEventListener('click', function () { openEditor(null); });
   $('search').addEventListener('input', function () { shown = 120; renderExos(); });
   $('menuBtn').addEventListener('click', function () { $('menu').showModal(); });
