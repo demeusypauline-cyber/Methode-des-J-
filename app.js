@@ -102,8 +102,9 @@
     });
     var budget = budgetDuJour(), fait = dejaFait(), cum = 0;
     list.forEach(function (o) {
-      var m = mins(o.x); cum += m;
-      o.in = (budget >= 1e9) || cum <= budget - fait || (cum === m && budget > fait);
+      var m = mins(o.x);
+      o.in = (budget >= 1e9) || cum + m <= budget - fait || (cum === 0 && budget > fait);
+      if (o.in) cum += m; /* un exo qui ne rentre pas est reporté ; un plus court peut prendre sa place */
     });
     return { list: list, budget: budget, fait: fait };
   }
@@ -427,7 +428,7 @@
     /* charge */
     var c1 = dcard('Charge de révision à venir');
     var lg = el('div', 'legend');
-    [['En retard', C_LATE], ['Prévu', C_NORM], ['Examen (vagues)', 'hatch']].concat(!data.reglages.prevOff ? [['En retard (prévision)', C_PVL], ['Prévu (prévision)', C_PV], ['Examen (prévision)', 'hatchg']] : []).forEach(function (a) { var sp = el('span'); var i = el('i'); if (a[1] === 'hatch') i.className = 'hat'; else if (a[1] === 'hatchg') i.className = 'hat hg'; else i.style.background = a[1]; sp.appendChild(i); sp.appendChild(document.createTextNode(a[0])); lg.appendChild(sp); });
+    [['En retard', C_LATE], ['Prévu', C_NORM], ['Examen (vagues)', 'hatch'], ['Temps prévu ce jour-là', 'tick']].concat(!data.reglages.prevOff ? [['En retard (prévision)', C_PVL], ['Prévu (prévision)', C_PV], ['Examen (prévision)', 'hatchg']] : []).forEach(function (a) { var sp = el('span'); var i = el('i'); if (a[1] === 'hatch') i.className = 'hat'; else if (a[1] === 'hatchg') i.className = 'hat hg'; else if (a[1] === 'tick') i.className = 'tick'; else i.style.background = a[1]; sp.appendChild(i); sp.appendChild(document.createTextNode(a[0])); lg.appendChild(sp); });
     c1.appendChild(lg);
     {
       var sg = el('div', 'seg'); [[false, 'Sans prévisions'], [true, 'Avec prévisions']].forEach(function (o) {
@@ -516,6 +517,13 @@
       map[h.jour] = (map[h.jour] || 0) + (h.m || (x ? mins(x) : data.reglages.minutesDefaut));
     });
     data.ex.forEach(function (x) { if (!vu[x.id] && x.evalue && visible(x)) map[x.evalue] = (map[x.evalue] || 0) + mins(x); });
+    /* la date de la révision précédente (avant de refaire l'exo) compte aussi, si elle n'est pas déjà enregistrée */
+    var seen = {}; (data.hist || []).forEach(function (h) { seen[h.id + '|' + h.jour] = 1; }); data.ex.forEach(function (x) { if (x.evalue) seen[x.id + '|' + x.evalue] = 1; });
+    (data.hist || []).forEach(function (h) {
+      var pe = h.avant && h.avant.evalue; if (!pe || seen[h.id + '|' + pe]) return; seen[h.id + '|' + pe] = 1;
+      var x = data.ex.filter(function (e) { return e.id === h.id; })[0]; if (x && !visible(x)) return;
+      map[pe] = (map[pe] || 0) + (h.m || (x ? mins(x) : data.reglages.minutesDefaut));
+    });
     return map;
   }
   function dur(m) { return m >= 60 ? Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + ('0' + m % 60).slice(-2) : '') : m + ' min'; }
@@ -669,8 +677,8 @@
       var cum = 0, fait = d === 0 ? dejaFait() : 0; if (RET && d > 0) srt();
       cand.forEach(function (o) {
         if (done[o.i] || o.r >= t + d + 1) return;
-        cum += o.m;
-        if (bud >= 1e9 || cum <= bud - fait || (cum === o.m && bud > fait)) {
+        if (bud >= 1e9 || cum + o.m <= bud - fait || (cum === 0 && bud > fait)) {
+          cum += o.m;
           done[o.i] = 1; if (!o.v) cnt[d]++;
           if (RET) {
             var ox = o.v ? o.x : o.x, gp = t + d - (o.v ? o.ev : dnum(o.x.evalue)), nt = gp >= 0 ? RET(gp) : null;
@@ -711,6 +719,8 @@
         });
         g.restore();
       }
+      var bj = data.reglages.planning[(new Date((t + j) * DAY).getUTCDay() + 6) % 7];
+      if (typeof bj === 'number' && !isNaN(bj) && bj <= mx) { var by2 = B - (B - T) * bj / mx; g.strokeStyle = 'rgba(92,21,48,.55)'; g.lineWidth = 2; g.beginPath(); g.moveTo(x0 - 3, by2); g.lineTo(x0 + ww + 3, by2); g.stroke(); }
       var dd = new Date((t + j) * DAY), cx = L0 + j * bw + bw / 2; g.textAlign = 'center';
       g.fillStyle = j === 0 ? '#7a1f3d' : '#a58593'; g.font = (j === 0 ? 'bold ' : '') + '8px system-ui'; g.fillText((j === 0 ? 'AUJ.' : JS[dd.getUTCDay()]).toUpperCase(), cx, B + 12);
       g.fillStyle = '#5c1530'; g.font = 'bold 10px system-ui'; g.fillText(String(dd.getUTCDate()), cx, B + 24);
