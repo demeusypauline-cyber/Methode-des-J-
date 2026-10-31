@@ -95,7 +95,7 @@ table.tbl td.b{white-space:nowrap}
 table.tbl td.sem{font-size:.68rem;color:var(--muted);white-space:nowrap}
 table.tbl.dark{font-size:.78rem}table.tbl.dark td,table.tbl.dark th{padding:6px 4px}table.tbl.dark td.sem{font-size:.6rem}table.tbl.dark td.c{white-space:nowrap}
 
-.mlist{max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:6px}
+.mlist{max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:6px}
 .mrow{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px;font-size:.8rem}
 .mrow .mn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mrow .bar{margin:0}.mrow b{text-align:right;color:var(--bord)}
@@ -135,3 +135,6 @@ table.tbl.dark{font-size:.78rem}table.tbl.dark td,table.tbl.dark th{padding:6px 
 .uebox{display:flex;flex-direction:column;gap:6px;margin:6px 0 10px}
 .uerow{display:grid;grid-template-columns:1fr 130px;gap:8px;align-items:center}
 .uerow input{width:100%;border:1px solid var(--line);border-radius:8px;padding:5px 6px;font:inherit;background:#fff}
+
+.dcard{display:flex;flex-direction:column}
+.mlist,.mscroll{flex:1 1 auto;min-height:0;max-height:420px;overflow-y:auto;-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 34px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 34px),transparent);padding-bottom:26px}

@@ -389,10 +389,10 @@
       var gl = ueGroups(sm); if (!gl.length) return;
       cu.appendChild(el('div', 'semh', sm + (semAvg(sm) !== null ? ' · moyenne ' + fmt1(semAvg(sm)) : '')));
       var lw = el('div', 'mlist2');
-      gl.forEach(function (g) { anyUE = anyUE || g.ue; var r = el('div', 'mrow'); r.appendChild(el('span', 'mn', g.nom + (g.ue ? ' (' + g.notes.length + ' mat.)' : ''))); r.appendChild(nivBadge(g.avg, 'sm', g.avg / 4)); lw.appendChild(r); });
+      gl.forEach(function (g) { anyUE = anyUE || g.ue; var r = el('div', 'mrow'); r.appendChild(el('span', 'mn', g.nom + (g.ue && g.notes.length ? ' (' + g.notes.length + ' mat.)' : ''))); r.appendChild(nivBadge(g.avg, 'sm', g.avg / 4)); lw.appendChild(r); });
       cu.appendChild(lw);
     });
-    if (!cu.querySelector('.semh')) cu.appendChild(el('p', 'muted', 'Ajoute des notes /20 et range tes matières en UE dans l’onglet Examens.'));
+    if (!cu.querySelector('.semh')) cu.appendChild(el('p', 'muted', 'Ajoute des notes /20 et range tes matières en UE dans l’onglet Matières.'));
     var cuw = el('div', 'mscroll'); while (cu.children.length > 1) cuw.appendChild(cu.children[1]); cu.appendChild(cuw);
     cards.ue = cu;
 
@@ -424,7 +424,7 @@
 
     /* prochains examens */
     var c3 = dcard('Prochains examens');
-    if (!fut.length) c3.appendChild(el('p', 'muted', 'Aucune date d’examen à venir (onglet Examens).'));
+    if (!fut.length) c3.appendChild(el('p', 'muted', 'Aucune date d’examen à venir (onglet Matières).'));
     else {
       var tb = document.createElement('table'); tb.className = 'tbl dark';
       var hd = document.createElement('tr'); ['Semestre', 'Matière', 'Date', 'Dans', 'Niveau'].forEach(function (h) { hd.appendChild(el('th', '', h)); }); tb.appendChild(hd);
@@ -639,7 +639,7 @@
     if (sel) $('fMat').value = sel;
   }
   function openEditor(id) {
-    if (!data.mats.length) { toast('Ajoute d’abord une matière (onglet Examens).'); return; }
+    if (!data.mats.length) { toast('Ajoute d’abord une matière (onglet Matières).'); return; }
     editingId = id; var x = id ? data.ex.filter(function (e) { return e.id === id; })[0] : null;
     $('editorTitle').textContent = x ? 'Modifier l’exercice' : 'Nouvel exercice';
     $('fSucces').textContent = ''; NIV.forEach(function (n, i) { var o = el('option', '', i + ' · ' + n); o.value = i; $('fSucces').appendChild(o); });
