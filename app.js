@@ -349,7 +349,7 @@
   }
 
   /* ---------- vue : tableau de bord ---------- */
-  var C_LATE = '#7a1f3d', C_EXAM = '#f1b3c6', C_NORM = '#e0527f';
+  var C_LATE = '#7a1f3d', C_EXAM = '#f1b3c6', C_NORM = '#e0527f', C_PV = '#f6c9d6';
   var C_NIV = ['#7a1f3d', '#a33c5e', '#cc597f', '#e57d9f', '#f0a9c0', '#f8d3e0'];
   var JS = ['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam'];
   function dcard(title, extra) { var c = el('div', 'dcard' + (extra ? ' ' + extra : '')); if (title) c.appendChild(el('h2', '', title)); return c; }
@@ -425,8 +425,14 @@
     /* charge */
     var c1 = dcard('Charge de révision à venir');
     var lg = el('div', 'legend');
-    [['En retard', C_LATE], ['Prévu', C_NORM], ['Examen (vagues)', 'hatch']].forEach(function (a) { var sp = el('span'); var i = el('i'); if (a[1] === 'hatch') i.className = 'hat'; else i.style.background = a[1]; sp.appendChild(i); sp.appendChild(document.createTextNode(a[0])); lg.appendChild(sp); });
+    [['En retard', C_LATE], ['Prévu', C_NORM], ['Examen (vagues)', 'hatch']].concat(!data.reglages.prevOff ? [[retentionFn() ? 'Révisions prévues (d’après ta courbe)' : 'Révisions prévues (si toutes tes notes sont des 5)', C_PV]] : []).forEach(function (a) { var sp = el('span'); var i = el('i'); if (a[1] === 'hatch') i.className = 'hat'; else i.style.background = a[1]; sp.appendChild(i); sp.appendChild(document.createTextNode(a[0])); lg.appendChild(sp); });
     c1.appendChild(lg);
+    {
+      var sg = el('div', 'seg'); [[false, 'Sans prévisions'], [true, 'Avec prévisions']].forEach(function (o) {
+        var b = el('button', (!data.reglages.prevOff) === o[0] ? 'on' : '', o[1]); b.type = 'button';
+        b.addEventListener('click', function () { data.reglages.prevOff = !o[0]; save(); renderDash(); }); sg.appendChild(b); });
+      c1.insertBefore(sg, lg);
+    }
     var cv = document.createElement('canvas'), sc = el('div', 'scrollx'); sc.appendChild(cv); c1.appendChild(sc);
     cards.charge = c1; draws.charge = function () { drawCharge(cv, L, t); };
 
@@ -638,31 +644,44 @@
       g.strokeStyle = '#7a1f3d'; g.lineWidth = 3; g.lineJoin = 'round'; g.lineCap = 'round'; g.beginPath(); pts.forEach(function (p, i) { if (i) g.lineTo(X(p.x), Y(p.y)); else g.moveTo(X(p.x), Y(p.y)); }); g.stroke();
     }
   }
+  /* note attendue (0-5) après `gap` jours, d'après la courbe de l'oubli lissée ; null si pas assez de données */
+  function retentionFn() {
+    var P = oubliPts(); if (P.length < 30) return null;
+    return function (gap) {
+      var sw = 0, sv = 0; P.forEach(function (p) { var z = (p.g - gap) / 7, wg = Math.exp(-z * z / 2); sw += wg; sv += wg * p.n; });
+      return sw >= 1.2 ? sv / sw : null;
+    };
+  }
   function drawCharge(cv, L, t) {
-    var N = 42, late = [], lateEx = [], ex = [], nm = [], cnt = []; for (var i = 0; i < N; i++) { late.push(0); lateEx.push(0); ex.push(0); nm.push(0); cnt.push(0); }
+    var N = 42, late = [], lateEx = [], ex = [], nm = [], pv = [], cnt = []; for (var i = 0; i < N; i++) { late.push(0); lateEx.push(0); ex.push(0); nm.push(0); pv.push(0); cnt.push(0); }
+    var RET = data.reglages.prevOff ? null : (retentionFn() || function () { return 5; }), vc = 0;
     var cand = [];
     data.ex.forEach(function (x, i) { if (visible(x) && x.evalue) cand.push({ x: x, r: revision(x), ex: modeExam(x), i: i, m: mins(x) }); });
-    cand.sort(function (a, b) {
-      return ((a.ex ? 0 : 1) * 1e11 + a.r * 1e5 + lvl(a.x) * 1e4 + a.i) - ((b.ex ? 0 : 1) * 1e11 + b.r * 1e5 + lvl(b.x) * 1e4 + b.i);
-    });
+    function lvO(o) { return o.v ? o.L : lvl(o.x); }
+    function srt() { cand.sort(function (a, b) { return ((a.ex ? 0 : 1) * 1e11 + a.r * 1e5 + lvO(a) * 1e4 + (a.v ? 5e3 : 0) + (a.i + '' === a.i ? 0 : a.i)) - ((b.ex ? 0 : 1) * 1e11 + b.r * 1e5 + lvO(b) * 1e4 + (b.v ? 5e3 : 0) + (b.i + '' === b.i ? 0 : b.i)); }); }
+    srt();
     var done = {};
     for (var d = 0; d < N; d++) {
       var wd = new Date((t + d) * DAY).getUTCDay(), bud = data.reglages.planning[(wd + 6) % 7];
       bud = typeof bud === 'number' && !isNaN(bud) ? bud : 1e9;
-      var cum = 0, fait = d === 0 ? dejaFait() : 0;
+      var cum = 0, fait = d === 0 ? dejaFait() : 0; if (RET && d > 0) srt();
       cand.forEach(function (o) {
         if (done[o.i] || o.r >= t + d + 1) return;
         cum += o.m;
         if (bud >= 1e9 || cum <= bud - fait || (cum === o.m && bud > fait)) {
-          done[o.i] = 1; cnt[d]++;
-          if (o.r < t) { if (o.ex) lateEx[d] += o.m; else late[d] += o.m; } else if (o.ex) ex[d] += o.m; else nm[d] += o.m;
+          done[o.i] = 1; if (!o.v) cnt[d]++;
+          if (RET && !o.ex) {
+            var gp = t + d - (o.v ? o.ev : dnum(o.x.evalue)), nt = gp >= 0 ? RET(gp) : null;
+            if (nt !== null) { var pl = o.v ? o.L : lvl(o.x), nl = Math.min(5, Math.round(nt)); if (nl >= 5 && pl >= 5) nl = pl + 1; var r2 = t + d + interval(nl); if (r2 < t + N) cand.push({ v: true, dp: (o.dp || 0) + 1, L: nl, ev: t + d, r: r2, ex: false, i: 'v' + (vc++), m: o.m }); }
+          }
+          if (o.v) pv[d] += o.m; else if (o.r < t) { if (o.ex) lateEx[d] += o.m; else late[d] += o.m; } else if (o.ex) ex[d] += o.m; else nm[d] += o.m;
         }
       });
     }
     var w = 34 + N * 40 + 4, h = 210, dpr = window.devicePixelRatio || 1;
     cv.width = w * dpr; cv.height = h * dpr; cv.style.height = h + 'px'; cv.style.width = w + 'px';
     var g = cv.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, w, h);
-    var tot = late.map(function (_, i) { return late[i] + lateEx[i] + ex[i] + nm[i]; }), mx = Math.max.apply(null, tot.concat([60]));
+    var tot = late.map(function (_, i) { return late[i] + lateEx[i] + ex[i] + nm[i] + pv[i]; }), mx = Math.max.apply(null, tot.concat([60]));
     var step = mx > 600 ? 240 : mx > 240 ? 120 : 60; mx = Math.ceil(mx / step) * step;
     var L0 = 34, B = h - 46, T = 8, bw = (w - L0 - 4) / N;
     function rr(x, y, w2, h2, r) { g.beginPath(); if (g.roundRect) g.roundRect(x, y, w2, h2, r); else g.rect(x, y, w2, h2); }
@@ -679,7 +698,7 @@
       var x0 = L0 + j * bw + bw * 0.16, ww = bw * 0.68, yy = B, th = (B - T) * tot[j] / mx;
       if (th > 0) {
         g.save(); rr(x0, B - th, ww, th + 6, Math.min(6, ww / 2)); g.clip();
-        [[late[j], C_LATE, 0], [lateEx[j], C_LATE, 1], [nm[j], C_NORM, 0], [ex[j], C_NORM, 1]].forEach(function (s) {
+        [[late[j], C_LATE, 0], [lateEx[j], C_LATE, 1], [nm[j], C_NORM, 0], [ex[j], C_NORM, 1], [pv[j], C_PV, 0]].forEach(function (s) {
           if (!s[0]) return; var hh = (B - T) * s[0] / mx; g.fillStyle = s[1]; g.fillRect(x0, yy - hh, ww, hh);
           if (s[2]) { g.save(); g.beginPath(); g.rect(x0, yy - hh, ww, hh); g.clip(); waves(g, x0, yy - hh, ww, hh, '#f9d3e0', 5, 1.6, 1.2); g.restore(); }
           g.fillStyle = 'rgba(255,255,255,.7)'; g.fillRect(x0, yy - hh, ww, 1);
