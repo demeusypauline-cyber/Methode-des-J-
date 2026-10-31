@@ -513,15 +513,14 @@
     var map = {}, vu = {};
     (data.hist || []).forEach(function (h) {
       var x = data.ex.filter(function (e) { return e.id === h.id; })[0]; vu[h.id] = 1;
-      if (x && !visible(x)) return;
       map[h.jour] = (map[h.jour] || 0) + (h.m || (x ? mins(x) : data.reglages.minutesDefaut));
     });
-    data.ex.forEach(function (x) { if (!vu[x.id] && x.evalue && visible(x)) map[x.evalue] = (map[x.evalue] || 0) + mins(x); });
+    data.ex.forEach(function (x) { if (!vu[x.id] && x.evalue) map[x.evalue] = (map[x.evalue] || 0) + mins(x); });
     /* la date de la révision précédente (avant de refaire l'exo) compte aussi, si elle n'est pas déjà enregistrée */
     var seen = {}; (data.hist || []).forEach(function (h) { seen[h.id + '|' + h.jour] = 1; }); data.ex.forEach(function (x) { if (x.evalue) seen[x.id + '|' + x.evalue] = 1; });
     (data.hist || []).forEach(function (h) {
       var pe = h.avant && h.avant.evalue; if (!pe || seen[h.id + '|' + pe]) return; seen[h.id + '|' + pe] = 1;
-      var x = data.ex.filter(function (e) { return e.id === h.id; })[0]; if (x && !visible(x)) return;
+      var x = data.ex.filter(function (e) { return e.id === h.id; })[0];
       map[pe] = (map[pe] || 0) + (h.m || (x ? mins(x) : data.reglages.minutesDefaut));
     });
     return map;
@@ -1048,7 +1047,7 @@
   document.querySelectorAll('#tabs button').forEach(function (b) { b.addEventListener('click', function () { try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { /* sans vibration */ } view = b.dataset.view; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } shown = 120; window._top = 1; render(); window.scrollTo(0, 0); }); });
   $('addBtn').addEventListener('click', function () { openEditor(null); });
   $('search').addEventListener('input', function () { shown = 120; renderExos(); });
-  $('menuBtn').addEventListener('click', function () { $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 98'; $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
   $('syncUrlBtn').addEventListener('click', function () { $('menu').close(); syncNow(true); });

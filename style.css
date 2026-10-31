@@ -259,3 +259,5 @@ header h1{font-size:1.15rem;letter-spacing:.2px}
 .mlist .mrow .chip2{font-style:normal;font-size:.62rem;font-weight:700;color:var(--bord);background:#fbe3ec;border-radius:999px;padding:2px 7px;flex:none}
 
 .legend i.hat.hg{background-color:#838383;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 3Q2.5 0 5 3T10 3' fill='none' stroke='%23e1e1e1' stroke-width='1.2'/%3E%3C/svg%3E")}
+
+.legend i.tick{background:transparent;border-top:2px solid rgba(92,21,48,.55);height:0;border-radius:0;align-self:center;width:14px}
