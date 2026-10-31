@@ -257,3 +257,5 @@ header h1{font-size:1.15rem;letter-spacing:.2px}
 .mlist .mrow{background:#fff8fa;border:1px solid #fbe3ec;border-left:5px solid var(--rose);border-radius:14px;padding:9px 12px;font-size:.88rem;font-weight:600;color:var(--ink)}
 .mlist .mrow .mn{display:flex;align-items:center;gap:8px;min-width:0}
 .mlist .mrow .chip2{font-style:normal;font-size:.62rem;font-weight:700;color:var(--bord);background:#fbe3ec;border-radius:999px;padding:2px 7px;flex:none}
+
+.legend i.hat.hg{background-color:#838383;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 3Q2.5 0 5 3T10 3' fill='none' stroke='%23e1e1e1' stroke-width='1.2'/%3E%3C/svg%3E")}
