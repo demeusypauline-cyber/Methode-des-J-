@@ -13,7 +13,7 @@ main{padding:12px 16px;max-width:760px;margin:0 auto}
 .chip{border:1.5px solid var(--rose);background:#fff;color:var(--bord);border-radius:999px;padding:4px 11px;font-size:.82rem}
 .chip[aria-pressed=true]{background:var(--bord);border-color:var(--bord);color:#fff}
 #tabs{position:fixed;left:0;right:0;bottom:0;display:flex;background:#fff;border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);z-index:5}
-#tabs button{flex:1;border:0;background:none;padding:14px 2px;font-size:.82rem;color:var(--muted)}
+#tabs button{flex:1;border:0;background:none;padding:14px 2px;font-size:.78rem;line-height:1.15;color:var(--muted)}
 #tabs button[aria-pressed=true]{color:var(--bord);font-weight:700;box-shadow:inset 0 3px 0 var(--bord)}
 .fab{position:fixed;right:16px;bottom:calc(76px + env(safe-area-inset-bottom,0px));width:56px;height:56px;border-radius:50%;border:0;background:var(--bord);color:#fff;font-size:2rem;box-shadow:0 3px 10px #0004;z-index:6}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:0 0 10px}
@@ -50,3 +50,38 @@ td input{padding:5px 6px}
 .legend{display:flex;gap:10px;flex-wrap:wrap;font-size:.78rem;color:var(--muted);margin-top:4px}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px}
 summary{cursor:pointer;font-weight:700;color:var(--bord);padding:6px 0}
+
+.banner{background:var(--bord);color:#fff;border-radius:999px;padding:10px 16px;font-size:.88rem;font-weight:600;margin:0 0 12px;text-align:center}
+.kpis3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+.kpi3{position:relative;background:#fff;border-radius:18px;padding:10px 6px 16px;text-align:center;box-shadow:0 2px 10px #7a1f3d14;overflow:hidden;display:flex;flex-direction:column;gap:1px}
+.kpi3 small{font-size:.58rem;font-weight:800;letter-spacing:.04em;color:var(--bord2)}
+.kpi3 b{font-size:2rem;line-height:1.1;color:var(--bord)}
+.kpi3 span{font-size:.66rem;color:var(--muted)}
+.kpi3 u{position:absolute;left:0;right:0;bottom:0;height:7px;background:var(--bord)}
+.kpi3 u.mid{background:#cc597f}
+.dcard{background:#fff;border-radius:18px;padding:14px 12px;margin:0 0 12px;box-shadow:0 2px 10px #7a1f3d14}
+.dcard h2{color:var(--bord);font-size:1rem;margin:0 0 .6rem}
+.cols{display:flex;align-items:flex-end;gap:6px;height:150px}
+.cols .col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-width:0;height:100%}
+.cols .col i{display:block;width:70%;background:#e8789e;border-radius:4px 4px 0 0;min-height:2px}
+.cols .v{font-size:.68rem;font-weight:700;color:var(--bord2);margin-bottom:2px}
+.cols .l{font-size:.58rem;color:var(--muted);margin-top:4px;text-align:center;word-break:break-all}
+table.tbl{border-collapse:separate;border-spacing:0;width:100%;font-size:.85rem}
+table.tbl th{background:var(--bord);color:#fff;font-size:.74rem;padding:7px 8px;text-align:left}
+table.tbl th:first-child{border-radius:10px 0 0 0}table.tbl th:last-child{border-radius:0 10px 0 0}
+table.tbl td{padding:6px 8px;border-bottom:1px solid #f3e1e8}
+table.tbl td.c{text-align:center}table.tbl td.b{font-weight:700;color:var(--bord)}table.tbl td.n{font-weight:700}
+table.tbl td input{width:100%;min-width:0;border:1px solid var(--line);border-radius:8px;padding:5px 6px;font:inherit;background:#fff}
+table.tbl td input[type=number]{width:70px}
+.namebtn{border:0;background:none;color:inherit;text-align:left;padding:4px 0;font:inherit}
+details{background:#fff;border-radius:14px;padding:6px 12px;margin:0 0 10px;box-shadow:0 2px 10px #7a1f3d14}
+
+table.tbl td.b{white-space:nowrap}
+
+.habit{display:flex;gap:6px;align-items:stretch}
+.hl{display:grid;grid-template-rows:14px repeat(7,1fr);gap:3px;font-size:.62rem;color:var(--muted);padding-top:0}
+.hl span{display:flex;align-items:center}
+.hl::before{content:''}
+.hg{flex:1;display:grid;grid-template-rows:14px repeat(7,auto);gap:3px;min-width:0}
+.hm{font-size:.58rem;color:var(--muted);white-space:nowrap;overflow:visible}
+.hc{display:block;aspect-ratio:1;border-radius:4px}
