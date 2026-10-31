@@ -395,19 +395,6 @@
     });
     c0.appendChild(cols); cards.sem = c0;
 
-    /* moyenne par UE */
-    var cu = dcard('Moyenne par UE · semestres cochés'), anyUE = false;
-    sems.forEach(function (sm) {
-      var gl = ueGroups(sm); if (!gl.length) return;
-      cu.appendChild(el('div', 'semh', sm + (semAvg(sm) !== null ? ' · moyenne ' + fmt1(semAvg(sm)) : '')));
-      var lw = el('div', 'mlist2');
-      gl.forEach(function (g) { anyUE = anyUE || g.ue; var r = el('div', 'mrow'); r.appendChild(el('span', 'mn', g.nom + (g.ue && g.notes.length ? ' (' + g.notes.length + ' mat.)' : ''))); r.appendChild(nivBadge(g.avg, 'sm', g.avg / 4)); lw.appendChild(r); });
-      cu.appendChild(lw);
-    });
-    if (!cu.querySelector('.semh')) cu.appendChild(el('p', 'muted', 'Ajoute des notes /20 et range tes matières en UE dans l’onglet Matières.'));
-    var cuw = el('div', 'mscroll'); while (cu.children.length > 1) cuw.appendChild(cu.children[1]); cu.appendChild(cuw);
-    cards.ue = cu;
-
     /* moyenne par matière : même nom fusionné, semestres cochés */
     var cm = dcard('Moyenne par matière · semestres cochés'), gm = {};
     L.forEach(function (x) { var k = x.matiere.trim().toLowerCase(); var g = gm[k] = gm[k] || { nom: x.matiere, s: 0, n: 0, sem: {}, nt: [] }; g.s += lvl(x); g.n++; g.sem[x.semestre] = 1; });
@@ -459,7 +446,7 @@
     c2.appendChild(lg2); cards.donut = c2; draws.donut = function () { drawDonut(cv2, L); };
 
     cards.charge.classList.add('wide'); cards.habit.classList.add('wide');
-    var R = data.reglages, keys = ['sem', 'ue', 'mat', 'charge', 'habit', 'exam', 'donut'];
+    var R = data.reglages, keys = ['sem', 'mat', 'charge', 'habit', 'exam', 'donut'];
     var ord = (R.dashOrdre || []).filter(function (k) { return keys.indexOf(k) >= 0; }); keys.forEach(function (k) { if (ord.indexOf(k) < 0) { if (k === 'ue' && ord.indexOf('sem') >= 0) ord.splice(ord.indexOf('sem') + 1, 0, k); else ord.push(k); } });
     var hid = R.dashCache || [];
     var ed = el('button', 'plain', dashEdit ? '✓ Terminé' : '⚙ Modifier l’affichage'); ed.type = 'button'; ed.style.margin = '0 0 12px';
@@ -871,7 +858,7 @@
 
   /* ---------- affichage ---------- */
   function render() {
-    renderFilters(); document.body.classList.toggle('wide', view === 'dash');
+    renderFilters(); document.body.classList.toggle('wide', view === 'dash' || view === 'set');
     ['today', 'exos', 'mats', 'dash', 'set'].forEach(function (v) { $('v-' + v).hidden = v !== view; });
     document.querySelectorAll('#tabs button').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.view === view ? 'true' : 'false'); });
     $('addBtn').hidden = view !== 'exos';
@@ -879,7 +866,7 @@
   }
 
   load();
-  document.querySelectorAll('#tabs button').forEach(function (b) { b.addEventListener('click', function () { view = b.dataset.view; shown = 120; render(); window.scrollTo(0, 0); }); });
+  document.querySelectorAll('#tabs button').forEach(function (b) { b.addEventListener('click', function () { try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { /* sans vibration */ } view = b.dataset.view; shown = 120; render(); window.scrollTo(0, 0); }); });
   $('addBtn').addEventListener('click', function () { openEditor(null); });
   $('search').addEventListener('input', function () { shown = 120; renderExos(); });
   $('menuBtn').addEventListener('click', function () { $('menu').showModal(); });
