@@ -1,4 +1,4 @@
-var CACHE = 'mes-exercices-v42';
+var CACHE = 'mes-exercices-v43';
 var FILES = ['./', './index.html', './style.css', './app.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', function (e) {

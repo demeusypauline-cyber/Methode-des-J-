@@ -307,6 +307,18 @@
         inp.placeholder = auto !== null ? fmt1(auto) + ' (auto)' : 'moyenne /20'; inp.value = def && typeof def.moy === 'number' ? def.moy : '';
         inp.addEventListener('change', function () { ueDef(s, u).moy = inp.value === '' ? null : +inp.value; save(); render(); });
         r.appendChild(nb); r.appendChild(inp); ub.appendChild(r);
+        var mw = el('div', 'uemats');
+        data.mats.forEach(function (m) {
+          if (m.semestre !== s || m.ue !== u) return;
+          var ch = el('button', 'chip', m.nom + (typeof m.note === 'number' ? ' · ' + fmt1(m.note) : '') + ' ✕'); ch.type = 'button';
+          ch.addEventListener('click', function () { m.ue = null; save(); render(); });
+          mw.appendChild(ch);
+        });
+        var ad = document.createElement('select'); ad.className = 'uesel'; var o0 = el('option', '', '+ Ajouter une matière'); o0.value = ''; ad.appendChild(o0);
+        data.mats.forEach(function (m, mi) { if (m.semestre !== s || m.ue === u) return; var o = el('option', '', m.nom + (m.ue ? ' (dans ' + m.ue + ')' : '')); o.value = String(mi); ad.appendChild(o); });
+        ad.addEventListener('change', function () { if (ad.value === '') return; data.mats[+ad.value].ue = u; save(); render(); });
+        if (ad.options.length > 1) mw.appendChild(ad);
+        ub.appendChild(mw);
       });
       var addUE = el('button', 'plain', '+ Ajouter une UE'); addUE.type = 'button';
       addUE.addEventListener('click', function () { var n = window.prompt('Nom de la nouvelle UE (semestre ' + s + ') :'); if (!n || !n.trim()) return; ueDef(s, n.trim()); save(); render(); });

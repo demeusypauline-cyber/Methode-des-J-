@@ -138,3 +138,6 @@ table.tbl.dark{font-size:.78rem}table.tbl.dark td,table.tbl.dark th{padding:6px 
 
 .dcard{display:flex;flex-direction:column}
 .mlist,.mscroll{flex:1 1 auto;min-height:0;max-height:420px;overflow-y:auto;-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 34px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 34px),transparent);padding-bottom:26px}
+
+.uemats{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:-2px 0 8px 10px}
+.uemats .uesel{margin:0}
