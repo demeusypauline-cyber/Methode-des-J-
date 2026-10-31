@@ -249,3 +249,11 @@ header h1{font-size:1.15rem;letter-spacing:.2px}
 .seg{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}
 .seg button{border:1px solid var(--line);background:#fff;color:var(--bord);border-radius:999px;padding:5px 10px;font:inherit;font-size:.74rem;font-weight:600}
 .seg button.on{background:var(--bord);color:#fff;border-color:var(--bord)}
+.hg{position:relative}
+.hcur{text-transform:capitalize;color:var(--bord)}.hcur ~ button{padding:6px 14px;font-size:.8rem;border-radius:999px;width:auto}
+
+/* moyennes par matière : tuiles douces */
+.mlist{gap:8px}
+.mlist .mrow{background:#fff8fa;border:1px solid #fbe3ec;border-left:5px solid var(--rose);border-radius:14px;padding:9px 12px;font-size:.88rem;font-weight:600;color:var(--ink)}
+.mlist .mrow .mn{display:flex;align-items:center;gap:8px;min-width:0}
+.mlist .mrow .chip2{font-style:normal;font-size:.62rem;font-weight:700;color:var(--bord);background:#fbe3ec;border-radius:999px;padding:2px 7px;flex:none}
