@@ -119,7 +119,7 @@
     var t = l[i]; l[i] = l[j]; l[j] = t; data.reglages.semOrdre = l; data.reglages.ordreSem = 'manuel'; save(); render();
   }
   function renderFilters() {
-    var box = $('filters'); box.textContent = '';
+    var box = $('filters'); box.textContent = ''; if (view === 'set') return;
     var all = semestres(); if (all.length < 2) return;
     all.forEach(function (s) {
       var b = el('button', 'chip', s); b.type = 'button';
@@ -358,6 +358,8 @@
     v = Math.max(0, Math.min(5, v)); if (v <= 2.5) { f = v / 2.5; p = A; q = B; } else { f = (v - 2.5) / 2.5; p = B; q = C; }
     return 'rgb(' + [0, 1, 2].map(function (i) { return Math.round(p[i] + (q[i] - p[i]) * f); }).join(',') + ')';
   }
+  /* niveau minimal pour ne plus avoir à réviser avant l'examen : le plus petit niveau dont l'intervalle couvre les jours restants */
+  function needLevel(d) { for (var n = 0; n <= 11; n++) if (interval(n) >= d) return n; return 11; }
   function nivBadge(v, sz, cv) {
     var c = cv === undefined ? v : cv, b = el('div', 'niv' + (sz ? ' ' + sz : ''), fmt1(Math.round(v * 10) / 10)); b.style.background = scale(c); b.style.color = c < 3.2 ? '#fff' : '#5c1530'; return b;
   }
@@ -414,7 +416,7 @@
     /* charge */
     var c1 = dcard('Charge de révision à venir');
     var lg = el('div', 'legend');
-    [['En retard', C_LATE], ['Prévu', C_NORM], ['Examen', C_EXAM]].forEach(function (a) { var sp = el('span'); var i = el('i'); i.style.background = a[1]; sp.appendChild(i); sp.appendChild(document.createTextNode(a[0])); lg.appendChild(sp); });
+    [['En retard', C_LATE], ['Prévu', C_NORM], ['Examen (hachures)', 'hatch']].forEach(function (a) { var sp = el('span'); var i = el('i'); if (a[1] === 'hatch') i.className = 'hat'; else i.style.background = a[1]; sp.appendChild(i); sp.appendChild(document.createTextNode(a[0])); lg.appendChild(sp); });
     c1.appendChild(lg);
     var cv = document.createElement('canvas'), sc = el('div', 'scrollx'); sc.appendChild(cv); c1.appendChild(sc);
     cards.charge = c1; draws.charge = function () { drawCharge(cv, L, t); };
@@ -433,7 +435,14 @@
         tr.appendChild(el('td', 'c b', 'J-' + (dn - t)));
         var es = L.filter(function (x) { return x.semestre === m.semestre && x.matiere === m.nom; }), av = es.length ? es.reduce(function (a, x) { return a + lvl(x); }, 0) / es.length : null;
         var nt = el('td', 'c n'); if (av !== null) nt.appendChild(nivBadge(av, 'sm'));
-        tr.appendChild(nt); tb.appendChild(tr);
+        tr.appendChild(nt); tr.className = 'top'; tb.appendChild(tr);
+        var J = dn - t, Rg = data.reglages, X = J > Rg.seuilButoire ? Rg.butoireSi : Rg.butoireSinon, need = needLevel(Math.max(0, J - X));
+        var pr = document.createElement('tr'), pd = document.createElement('td'); pd.colSpan = 5; pd.className = 'prog';
+        var trk = el('div', 'trk'), fl = el('i', 'fl'); fl.style.width = Math.min(100, need / 5 * 100) + '%'; trk.appendChild(fl);
+        for (var q = 1; q < 5; q++) { var tk = el('b', 'tk'); tk.style.left = (q * 20) + '%'; trk.appendChild(tk); }
+        if (av !== null) { var me = el('u', 'me'); me.style.left = Math.min(100, av / 5 * 100) + '%'; me.className = 'me' + (av + 0.05 < need ? ' behind' : ''); trk.appendChild(me); }
+        var lab = el('span', 'plab', 'Attendu ' + (need > 5 ? '5+' : need) + ' · Toi ' + (av === null ? '–' : fmt1(Math.round(av * 10) / 10)));
+        pd.appendChild(trk); pd.appendChild(lab); pr.appendChild(pd); tb.appendChild(pr);
       });
       c3.appendChild(tb);
     }
@@ -449,7 +458,8 @@
     var R = data.reglages, keys = ['sem', 'mat', 'charge', 'habit', 'exam', 'donut'];
     var ord = (R.dashOrdre || []).filter(function (k) { return keys.indexOf(k) >= 0; }); keys.forEach(function (k) { if (ord.indexOf(k) < 0) { if (k === 'ue' && ord.indexOf('sem') >= 0) ord.splice(ord.indexOf('sem') + 1, 0, k); else ord.push(k); } });
     var hid = R.dashCache || [];
-    var ed = el('button', 'plain', dashEdit ? '✓ Terminé' : '⚙ Modifier l’affichage'); ed.type = 'button'; ed.style.margin = '0 0 12px';
+    var ed = el('button', 'editbtn' + (dashEdit ? ' on' : '')); ed.type = 'button'; ed.setAttribute('aria-label', dashEdit ? 'Terminer' : 'Modifier l’affichage');
+    ed.innerHTML = dashEdit ? '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>' : '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M14 7l3 3"/></svg>';
     ed.addEventListener('click', function () { dashEdit = !dashEdit; renderDash(); }); box.appendChild(ed);
     var half = 0, lastHalf = null;
     ord.forEach(function (k, i) {
@@ -561,7 +571,7 @@
     
   }
   function drawCharge(cv, L, t) {
-    var N = 42, late = [], ex = [], nm = [], cnt = []; for (var i = 0; i < N; i++) { late.push(0); ex.push(0); nm.push(0); cnt.push(0); }
+    var N = 42, late = [], lateEx = [], ex = [], nm = [], cnt = []; for (var i = 0; i < N; i++) { late.push(0); lateEx.push(0); ex.push(0); nm.push(0); cnt.push(0); }
     var cand = [];
     data.ex.forEach(function (x, i) { if (visible(x) && x.evalue) cand.push({ x: x, r: revision(x), ex: modeExam(x), i: i, m: mins(x) }); });
     cand.sort(function (a, b) {
@@ -577,14 +587,14 @@
         cum += o.m;
         if (bud >= 1e9 || cum <= bud - fait || (cum === o.m && bud > fait)) {
           done[o.i] = 1; cnt[d]++;
-          if (o.r < t) late[d] += o.m; else if (o.ex) ex[d] += o.m; else nm[d] += o.m;
+          if (o.r < t) { if (o.ex) lateEx[d] += o.m; else late[d] += o.m; } else if (o.ex) ex[d] += o.m; else nm[d] += o.m;
         }
       });
     }
     var w = 34 + N * 40 + 4, h = 210, dpr = window.devicePixelRatio || 1;
     cv.width = w * dpr; cv.height = h * dpr; cv.style.height = h + 'px'; cv.style.width = w + 'px';
     var g = cv.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, w, h);
-    var tot = late.map(function (_, i) { return late[i] + ex[i] + nm[i]; }), mx = Math.max.apply(null, tot.concat([60]));
+    var tot = late.map(function (_, i) { return late[i] + lateEx[i] + ex[i] + nm[i]; }), mx = Math.max.apply(null, tot.concat([60]));
     var step = mx > 600 ? 240 : mx > 240 ? 120 : 60; mx = Math.ceil(mx / step) * step;
     var L0 = 34, B = h - 46, T = 8, bw = (w - L0 - 4) / N;
     g.font = '10px system-ui'; g.fillStyle = '#8a6573'; g.strokeStyle = '#f0dde4'; g.textAlign = 'right';
@@ -592,8 +602,10 @@
     g.textAlign = 'center';
     for (var j = 0; j < N; j++) {
       var x0 = L0 + j * bw + bw * 0.14, ww = bw * 0.72, yy = B;
-      [[late[j], C_LATE], [nm[j], C_NORM], [ex[j], C_EXAM]].forEach(function (s) {
-        if (!s[0]) return; var hh = (B - T) * s[0] / mx; g.fillStyle = s[1]; g.fillRect(x0, yy - hh, ww, hh); yy -= hh;
+      [[late[j], C_LATE, 0], [lateEx[j], C_LATE, 1], [nm[j], C_NORM, 0], [ex[j], C_NORM, 1]].forEach(function (s) {
+        if (!s[0]) return; var hh = (B - T) * s[0] / mx; g.fillStyle = s[1]; g.fillRect(x0, yy - hh, ww, hh);
+        if (s[2]) { g.save(); g.beginPath(); g.rect(x0, yy - hh, ww, hh); g.clip(); g.strokeStyle = 'rgba(250,212,228,.95)'; g.lineWidth = 1.8; for (var hx = x0 - hh; hx < x0 + ww + hh; hx += 5) { g.beginPath(); g.moveTo(hx, yy); g.lineTo(hx + hh, yy - hh); g.stroke(); } g.restore(); }
+        yy -= hh;
       });
       var dd = new Date((t + j) * DAY), cx = x0 + ww / 2; g.fillStyle = '#5c1530'; g.font = '9px system-ui';
       g.fillText(j === 0 ? 'auj.' : JS[dd.getUTCDay()], cx, B + 12); g.fillText(String(dd.getUTCDate()), cx, B + 23);
@@ -606,26 +618,41 @@
     var i = document.createElement('input'); i.type = 'number'; i.inputMode = 'numeric'; i.value = val === null || val === undefined || isNaN(val) ? '' : val;
     if (w) i.style.width = w; i.addEventListener('change', function () { cb(i.value === '' ? null : +i.value); save(); toast('Réglage enregistré.'); }); return i;
   }
+  var SET_IC = {
+    cal: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/>',
+    flag: '<path d="M5 21V4M5 4h12l-2 4 2 4H5"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'
+  };
+  function setCard(title, ic) {
+    var c = el('div', 'scard'), h = el('div', 'sh'), ico = el('span', 'sico'); ico.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">' + SET_IC[ic] + '</svg>';
+    h.appendChild(ico); h.appendChild(el('h2', '', title)); c.appendChild(h); return c;
+  }
+  function setRow(card, label, val, cb, unit, badge) {
+    var r = el('label', 'srow'), l = el('span', 'sl');
+    if (badge !== undefined) { var bd = el('i', 'sbadge', String(badge)); bd.style.background = scale(badge); bd.style.color = badge < 3.2 ? '#fff' : '#5c1530'; l.appendChild(bd); }
+    l.appendChild(el('span', '', label)); r.appendChild(l);
+    var f = el('span', 'sf'); f.appendChild(numInput(val, cb)); f.appendChild(el('em', '', unit)); r.appendChild(f); card.appendChild(r);
+  }
   function renderSet() {
     var box = $('v-set'); box.textContent = ''; var R = data.reglages;
-    var c1 = el('div', 'card'); c1.appendChild(el('h2', '', 'Intervalles de révision'));
+    var c1 = setCard('Intervalles de révision', 'cal');
     for (var n = 0; n < 6; n++) (function (n) {
-      var lb = el('label', '', n + (NIV[n] ? ' · ' + NIV[n] : '') + ' : prochaine révision dans … jours');
-      lb.appendChild(numInput(R.intervalles[n], function (v) { R.intervalles[n] = v === null ? 0 : v; })); c1.appendChild(lb);
+      setRow(c1, NIV[n] + ' : prochaine révision dans', R.intervalles[n], function (v) { R.intervalles[n] = v === null ? 0 : v; }, 'jours', n);
     })(n);
-
-    var lp = el('label', '', 'Après un 5 : chaque 5 de plus d’affilée (note 6 = 2 fois 5 de suite, note 7 = 3 fois…) repousse la révision de … jours'); lp.appendChild(numInput(R.pasApres5, function (v) { R.pasApres5 = v === null ? 0 : v; })); c1.appendChild(lp);
+    setRow(c1, 'Après un 5 : chaque 5 de plus d’affilée (note 6 = 2 fois 5 de suite, note 7 = 3 fois…) repousse la révision de', R.pasApres5, function (v) { R.pasApres5 = v === null ? 0 : v; }, 'jours');
     box.appendChild(c1);
 
-    var c2 = el('div', 'card'); c2.appendChild(el('h2', '', 'Mode examen'));
-    [['Début du mode examen : jours avant l’examen', 'debutExam'], ['Butoire : seuil — un exo fait plus de … jours avant l’examen est « tôt », sinon « tard »', 'seuilButoire'], ['Butoire si fait tôt : ne plus réviser … jours avant l’examen', 'butoireSi'], ['Butoire sinon (fait tard) : ne plus réviser … jours avant l’examen (0 = jusqu’au jour J)', 'butoireSinon'], ['Minutes comptées par exo sans durée', 'minutesDefaut']].forEach(function (a) {
-      var lb = el('label', '', a[0]); lb.appendChild(numInput(R[a[1]], function (v) { R[a[1]] = v === null ? 0 : v; })); c2.appendChild(lb);
+    var c2 = setCard('Mode examen', 'flag');
+    [['Début du mode examen : jours avant l’examen', 'debutExam', 'jours'], ['Butoire : seuil — un exo fait plus de … jours avant l’examen est « tôt », sinon « tard »', 'seuilButoire', 'jours'], ['Butoire si fait tôt : ne plus réviser … jours avant l’examen', 'butoireSi', 'jours'], ['Butoire sinon (fait tard) : ne plus réviser … jours avant l’examen (0 = jusqu’au jour J)', 'butoireSinon', 'jours'], ['Minutes comptées par exo sans durée', 'minutesDefaut', 'min']].forEach(function (a) {
+      setRow(c2, a[0], R[a[1]], function (v) { R[a[1]] = v === null ? 0 : v; }, a[2]);
     });
     box.appendChild(c2);
 
-    var c3 = el('div', 'card'); c3.appendChild(el('h2', '', 'Planning de la semaine (minutes)'));
-    JOURS.forEach(function (j, i) { var lb = el('label', '', j); lb.appendChild(numInput(R.planning[i], function (v) { R.planning[i] = v; })); c3.appendChild(lb); });
-    box.appendChild(c3);
+    var c3 = setCard('Planning de la semaine (minutes)', 'clock'), wk = el('div', 'week');
+    JOURS.forEach(function (j, i) {
+      var d = el('label', 'wday'); d.appendChild(el('b', '', j)); d.appendChild(numInput(R.planning[i], function (v) { R.planning[i] = v; })); d.appendChild(el('em', '', 'min')); wk.appendChild(d);
+    });
+    c3.appendChild(wk); box.appendChild(c3);
   }
 
   /* ---------- édition d'un exercice ---------- */
