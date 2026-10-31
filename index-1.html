@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#7a1f3d">
+<title>Mes exercices</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Mes exercices</h1>
+  <button id="menuBtn" class="icon" aria-label="Menu">⋮</button>
+</header>
+
+<div id="filters" class="chips" aria-label="Semestres"></div>
+
+<main>
+  <section id="v-today"></section>
+  <section id="v-exos" hidden>
+    <input id="search" type="search" placeholder="Chercher (matière, intitulé…)">
+    <div id="exoList"></div>
+  </section>
+  <section id="v-mats" hidden></section>
+  <section id="v-dash" hidden></section>
+  <section id="v-set" hidden></section>
+</main>
+
+<button id="addBtn" class="fab" aria-label="Ajouter un exercice" hidden>+</button>
+
+<nav id="tabs">
+  <button data-view="today" aria-pressed="true">À faire</button>
+  <button data-view="exos" aria-pressed="false">Exos</button>
+  <button data-view="mats" aria-pressed="false">Examens</button>
+  <button data-view="dash" aria-pressed="false">Bord</button>
+  <button data-view="set" aria-pressed="false">Réglages</button>
+</nav>
+
+<div id="toast" role="status"></div>
+
+<dialog id="menu">
+  <h2>Menu</h2>
+  <button id="syncBtn" class="row">Synchroniser avec mon Drive</button>
+  <button id="syncUrlBtn" class="row plain">Changer l’adresse de synchronisation</button>
+  <button id="importSheet" class="row">Importer mon tableur (Excel .xlsx ou CSV)</button>
+  <input id="sheetInput" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+  <button id="exportBtn" class="row">Sauvegarder (fichier à garder dans ton Drive)</button>
+  <button id="importFile" class="row">Restaurer depuis un fichier</button>
+  <input id="fileInput" type="file" accept="application/json,.json" hidden>
+  <button id="closeMenu" class="row plain">Fermer</button>
+</dialog>
+
+<dialog id="editor">
+  <form id="form" method="dialog">
+    <h2 id="editorTitle">Nouvel exercice</h2>
+    <label>Semestre <select id="fSem"></select></label>
+    <label>Matière <select id="fMat"></select></label>
+    <label>Intitulé (facultatif) <input id="fTitre" autocomplete="off"></label>
+    <label>Niveau de réussite (0 à 5)
+      <select id="fSucces"></select>
+    </label>
+    <label>Fait le <input id="fDate" type="date" required></label>
+    <label>Durée en minutes (facultatif) <input id="fMin" type="number" min="0" inputmode="numeric"></label>
+    <div class="actions">
+      <button type="button" id="delBtn" class="danger" hidden>Supprimer</button>
+      <span class="grow"></span>
+      <button type="button" id="cancelBtn" class="plain">Annuler</button>
+      <button type="submit" class="primary">Enregistrer</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="doneDlg">
+  <h2 id="doneTitle">Exercice refait</h2>
+  <p id="doneTxt" class="muted"></p>
+  <div id="doneBtns" class="levels"></div>
+  <button id="doneCancel" class="row plain">Annuler</button>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>
