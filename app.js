@@ -4,7 +4,7 @@
   var DAY = 86400000;
   var NIV = ['Échec total', 'Beaucoup d’erreurs', 'Compréhension partielle', 'Compréhension correcte', 'Presque parfait', 'Maîtrise totale'];
   var JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-  var DEF = { intervalles: [2, 4, 10, 25, 35, 50, 70, 90, 110, 130, 150, 170], minutesDefaut: 5, debutExam: 50, seuilButoire: 15, butoireSi: 5, butoireSinon: 0, planning: [60, 60, 30, 180, 30, 180, 30], semestres: [], ordreSem: 'manuel', semOrdre: [], dashOrdre: [], dashCache: [] };
+  var DEF = { intervalles: [2, 4, 10, 25, 35, 50, 70, 90, 110, 130, 150, 170], minutesDefaut: 5, debutExam: 50, seuilButoire: 15, butoireSi: 5, butoireSinon: 0, planning: [60, 60, 30, 180, 30, 180, 30], semestres: [], ordreSem: 'manuel', semOrdre: [], dashOrdre: [], dashCache: [], pasApres5: 20 };
   var data = { ex: [], mats: [], reglages: JSON.parse(JSON.stringify(DEF)) };
   var view = 'today', editingId = null, doingId = null, shown = 120;
 
@@ -25,6 +25,9 @@
     d = d && typeof d === 'object' ? d : {};
     var r = Object.assign({}, JSON.parse(JSON.stringify(DEF)), d.reglages || {});
     for (var i = 0; i < 12; i++) if (typeof r.intervalles[i] !== 'number') r.intervalles[i] = DEF.intervalles[i];
+    if (Array.isArray(d.ex)) d.ex.forEach(function (x) {
+      if (x.succes > 5) { var r = runOf(x.id, d.hist); x.p5 = Math.max(0, x.succes - 4 - r.run); x.succes = 5; }
+    });
     return { ex: Array.isArray(d.ex) ? d.ex : [], mats: Array.isArray(d.mats) ? d.mats : [], hist: Array.isArray(d.hist) ? d.hist : [], jours: d.jours && typeof d.jours === 'object' ? d.jours : {}, reglages: r };
   }
   function load() { try { var raw = localStorage.getItem(KEY); if (raw) data = fix(JSON.parse(raw)); } catch (e) { /* départ à vide */ } }
@@ -38,9 +41,26 @@
     for (var i = 0; i < data.mats.length; i++) { var m = data.mats[i]; if (m.semestre === sem && m.nom === mat) return m.examen ? dnum(m.examen) : null; }
     return null;
   }
-  function interval(n) { var v = data.reglages.intervalles[n]; return typeof v === 'number' ? v : 0; }
+  /* niveau réel : 5 = maîtrise ; 6, 7… = plusieurs 5 d'affilée, déduits de l'historique */
+  function runOf(id, hs) {
+    var mine = (hs || []).filter(function (h) { return h.id === id; }).sort(function (a, b) { return a.ts - b.ts; }), run = 0, i;
+    for (i = mine.length - 1; i >= 0; i--) { if (mine[i].niveau >= 5) run++; else break; }
+    return { run: run, all: i < 0 };
+  }
+  function lvl(x) {
+    var s = x.succes || 0; if (s < 5) return s;
+    var r = runOf(x.id, data.hist), P = r.all ? (x.p5 || 0) : 0;
+    if (!r.run && !P) return 5;
+    return Math.min(11, 4 + Math.max(1, P + r.run));
+  }
+  function interval(n) {
+    var R = data.reglages;
+    if (n > 5) { var b = R.intervalles[5], p = typeof R.pasApres5 === 'number' ? R.pasApres5 : 20; return (typeof b === 'number' ? b : 0) + (n - 5) * p; }
+    var v = R.intervalles[n]; return typeof v === 'number' ? v : 0;
+  }
+  function nivName(n) { return n <= 5 ? (NIV[n] || '') : 'Maîtrise totale · ' + (n - 4) + ' fois de suite'; }
   function revision(x) {
-    var R = data.reglages, I = dnum(x.evalue), iv = interval(x.succes), E = examNum(x.semestre, x.matiere);
+    var R = data.reglages, I = dnum(x.evalue), iv = interval(lvl(x)), E = examNum(x.semestre, x.matiere);
     if (E !== null) {
       var dE = E - I;
       if (dE >= 0 && dE <= R.debutExam) {
@@ -74,8 +94,8 @@
       if (r < t + 1) list.push({ x: x, r: r, ex: modeExam(x), i: i });
     });
     list.sort(function (a, b) {
-      var ka = (a.ex ? 0 : 1) * 1e11 + a.r * 1e5 + (a.x.succes || 0) * 1e4 + a.i;
-      var kb = (b.ex ? 0 : 1) * 1e11 + b.r * 1e5 + (b.x.succes || 0) * 1e4 + b.i;
+      var ka = (a.ex ? 0 : 1) * 1e11 + a.r * 1e5 + lvl(a.x) * 1e4 + a.i;
+      var kb = (b.ex ? 0 : 1) * 1e11 + b.r * 1e5 + lvl(b.x) * 1e4 + b.i;
       return ka - kb;
     });
     var budget = budgetDuJour(), fait = dejaFait(), cum = 0;
@@ -117,9 +137,9 @@
   function exoCard(o, withBtn) {
     var x = o.x, c = el('div', 'card' + (o.ex ? ' exam' : ''));
     var top = el('div', 'row2');
-    var nb = el('div', 'niv', String(x.succes)); var nv = scale(x.succes || 0); nb.style.background = nv; nb.style.color = (x.succes || 0) < 3.2 ? '#fff' : '#5c1530'; nb.title = NIV[Math.min(5, x.succes || 0)] || '';
+    var lx = lvl(x), nb = el('div', 'niv', String(lx)); nb.style.background = scale(lx); nb.style.color = lx < 3.2 ? '#fff' : '#5c1530'; nb.title = nivName(lx);
     var l = el('div'); l.style.flex = '1'; l.appendChild(el('b', '', x.matiere + (x.intitule ? ' · ' + x.intitule : '')));
-    l.appendChild(el('div', 'muted', x.semestre + ' · fait le ' + fromNum(dnum(x.evalue)) + (NIV[x.succes] ? ' · ' + NIV[x.succes] : '')));
+    l.appendChild(el('div', 'muted', x.semestre + ' · fait le ' + fromNum(dnum(x.evalue)) + ' · ' + nivName(lx)));
     top.appendChild(nb); top.appendChild(l);
     if (withBtn) { var b = el('button', 'primary', 'Refait'); b.type = 'button'; b.addEventListener('click', function () { openDone(x.id); }); top.appendChild(b); }
     c.appendChild(top);
@@ -138,7 +158,7 @@
     var P = plan(), d = new Date();
     var head = el('div', 'card');
     var tot = 0; P.list.forEach(function (o) { if (o.in) tot += mins(o.x); });
-    head.appendChild(el('h2', '', 'Aujourd’hui · ' + JOURS[(d.getDay() + 6) % 7]));
+    var jt = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); head.appendChild(el('h2', '', 'Aujourd’hui · ' + jt.charAt(0).toUpperCase() + jt.slice(1)));
     var bud = P.budget >= 1e9 ? 'sans limite' : P.budget + ' min';
     head.appendChild(el('div', 'muted', 'Budget du jour : ' + bud + ' · déjà fait : ' + P.fait + ' min · prévu : ' + tot + ' min'));
     var bar = el('div', 'bar'), fill = el('i'); fill.style.width = (P.budget >= 1e9 ? 0 : Math.min(100, Math.round(P.fait / P.budget * 100))) + '%'; bar.appendChild(fill); head.appendChild(bar);
@@ -164,19 +184,16 @@
     var lim = Date.now() - 7 * DAY, L = (data.hist || []).filter(function (h) { return h.ts > lim; }).sort(function (a, b) { return b.ts - a.ts; });
     var det = document.createElement('details'); det.appendChild(el('summary', '', 'Historique de la semaine (' + L.length + ')'));
     if (!L.length) { det.appendChild(el('p', 'muted', 'Rien de fait cette semaine.')); return det; }
-    det.appendChild(el('p', 'muted', 'Cliqué « fait » par erreur ? Annule, ou corrige le niveau.'));
     L.forEach(function (h) {
       var x = data.ex.filter(function (e) { return e.id === h.id; })[0]; if (!x) return;
       var c = el('div', 'card'), top = el('div', 'row2'), l = el('div');
       l.appendChild(el('b', '', x.matiere + (x.intitule ? ' · ' + x.intitule : '')));
       var d = new Date(h.ts); l.appendChild(el('div', 'muted', JOURS[(d.getDay() + 6) % 7] + ' ' + fromNum(dnum(h.jour)).slice(0, 5) + ' · niveau ' + h.avant.succes + ' → ' + h.niveau));
       top.appendChild(l); c.appendChild(top);
-      var row = el('div', 'row2'); row.style.marginTop = '8px';
-      var sel = document.createElement('select'); NIV.forEach(function (n, i) { var o = el('option', '', i + ' · ' + n); o.value = i; sel.appendChild(o); }); sel.value = h.niveau;
-      sel.addEventListener('change', function () { h.niveau = +sel.value; x.succes = h.niveau; save(); render(); toast('Niveau corrigé.'); });
+      var row = el('div'); row.style.marginTop = '8px';
       var un = el('button', 'plain', 'Annuler'); un.type = 'button';
       un.addEventListener('click', function () { x.succes = h.avant.succes; x.evalue = h.avant.evalue; data.hist = data.hist.filter(function (z) { return z !== h; }); save(); render(); toast('Remis comme avant.'); });
-      row.appendChild(sel); row.appendChild(un); c.appendChild(row); det.appendChild(c);
+      row.appendChild(un); c.appendChild(row); det.appendChild(c);
     });
     return det;
   }
@@ -214,7 +231,6 @@
   /* ---------- vue : examens ---------- */
   function renderMats() {
     var box = $('v-mats'); box.textContent = '';
-    box.appendChild(el('p', 'muted', 'La date d’examen déclenche le mode examen (voir Réglages). Laisse vide s’il n’y a pas d’examen.'));
     var od = el('div', 'chips'); od.style.padding = '0 0 10px'; od.appendChild(el('span', 'muted', 'Ordre des semestres :'));
     [['alpha', 'A → Z'], ['manuel', 'Manuel (↑ ↓)']].forEach(function (a) {
       var b = el('button', 'chip', a[1]); b.type = 'button'; b.setAttribute('aria-pressed', data.reglages.ordreSem === a[0] ? 'true' : 'false');
@@ -223,7 +239,7 @@
     });
     box.appendChild(od);
     if (data.reglages.ordreSem !== 'alpha' && semestres().length > 1) {
-      var ol = el('div', 'dlist'); ol.appendChild(el('p', 'muted', 'Maintiens ⠿ et glisse pour déplacer un semestre.'));
+      var ol = el('div', 'dlist');
       var rows = el('div', 'drows'); ol.appendChild(rows);
       semestres().forEach(function (sm) {
         var r = el('div', 'drow'); r.dataset.sem = sm; var h = el('span', 'dh', '⠿'); r.appendChild(h); r.appendChild(el('span', 'dn', sm));
@@ -256,6 +272,19 @@
         var rb = el('button', 'namebtn', m.nom + ' ✎'); rb.type = 'button';
         rb.addEventListener('click', function () { renameMat(m); });
         td1.appendChild(rb);
+        var us = document.createElement('select'); us.className = 'uesel';
+        function fillUE() {
+          us.textContent = ''; var o0 = el('option', '', '— UE : aucune —'); o0.value = ''; us.appendChild(o0);
+          ueList(s).forEach(function (u) { var o = el('option', '', 'UE : ' + u); o.value = u; us.appendChild(o); });
+          var on = el('option', '', '+ Nouvelle UE…'); on.value = '__new'; us.appendChild(on); us.value = m.ue || '';
+        }
+        fillUE();
+        us.addEventListener('change', function () {
+          var v = us.value;
+          if (v === '__new') { var n = window.prompt('Nom de la nouvelle UE (semestre ' + s + ') :'); if (!n || !n.trim()) { us.value = m.ue || ''; return; } v = n.trim(); }
+          m.ue = v || null; save(); render(); toast(v ? 'Rangée dans « ' + v + ' ».' : 'UE retirée.');
+        });
+        td1.appendChild(us);
         var inp = document.createElement('input'); inp.type = 'date'; inp.value = m.examen || '';
         inp.addEventListener('change', function () { m.examen = inp.value || null; save(); toast('Date enregistrée.'); });
         td2.appendChild(inp);
@@ -264,6 +293,19 @@
         td3.appendChild(nt);
         tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tb.appendChild(tr);
       });
+      var ul = ueList(s);
+      if (ul.length) {
+        var ub = el('div', 'uebar'); ub.appendChild(el('span', 'muted', 'UE :'));
+        ul.forEach(function (u) {
+          var ch = el('button', 'chip', u + ' ✎'); ch.type = 'button';
+          ch.addEventListener('click', function () {
+            var n = window.prompt('Renommer l’UE « ' + u + ' » (vide = supprimer l’UE, les matières restent) :', u); if (n === null) return; n = n.trim();
+            data.mats.forEach(function (m) { if (m.semestre === s && m.ue === u) m.ue = n || null; }); save(); render();
+          });
+          ub.appendChild(ch);
+        });
+        det.appendChild(ub);
+      }
       det.appendChild(tb);
       var ren = el('button', 'plain', 'Renommer ce semestre'); ren.type = 'button'; ren.style.margin = '8px 8px 0 0';
       ren.addEventListener('click', function () { renameSem(s); });
@@ -299,8 +341,8 @@
     v = Math.max(0, Math.min(5, v)); if (v <= 2.5) { f = v / 2.5; p = A; q = B; } else { f = (v - 2.5) / 2.5; p = B; q = C; }
     return 'rgb(' + [0, 1, 2].map(function (i) { return Math.round(p[i] + (q[i] - p[i]) * f); }).join(',') + ')';
   }
-  function nivBadge(v, sz) {
-    var b = el('div', 'niv' + (sz ? ' ' + sz : ''), fmt1(Math.round(v * 10) / 10)); b.style.background = scale(v); b.style.color = v < 3.2 ? '#fff' : '#5c1530'; return b;
+  function nivBadge(v, sz, cv) {
+    var c = cv === undefined ? v : cv, b = el('div', 'niv' + (sz ? ' ' + sz : ''), fmt1(Math.round(v * 10) / 10)); b.style.background = scale(c); b.style.color = c < 3.2 ? '#fff' : '#5c1530'; return b;
   }
   function fmt1(v) { return (Math.round(v * 100) / 100).toString().replace('.', ','); }
   var dashEdit = false;
@@ -317,8 +359,8 @@
     if (fut.length) { var dd = dnum(fut[0].examen) - t; ban.textContent = todo + ' exercice' + (todo > 1 ? 's' : '') + ' à réviser aujourd’hui  ·  Prochain examen : ' + fut[0].nom + ' ' + (dd === 0 ? 'aujourd’hui' : 'dans ' + dd + ' jour' + (dd > 1 ? 's' : '')); }
     box.appendChild(ban);
 
-    var notes = matsV.filter(function (m) { return typeof m.note === 'number'; }).map(function (m) { return m.note; });
-    var moy = notes.length ? notes.reduce(function (a, b) { return a + b; }, 0) / notes.length : null;
+    var sv = semestres().filter(function (z) { return !data.reglages.semestres.length || data.reglages.semestres.indexOf(z) >= 0; }).map(semAvg).filter(function (v) { return v !== null; });
+    var moy = sv.length ? sv.reduce(function (a, b) { return a + b; }, 0) / sv.length : null;
     var k = el('div', 'kpis3');
     [['EXERCICES', L.length, 'enregistrés'], ['À FAIRE AUJOURD’HUI', todo, 'dont ' + late + ' en retard'], ['MOYENNE /20', moy === null ? '–' : fmt1(moy), 'd’après tes relevés']].forEach(function (a, i) {
       var d = el('div', 'kpi3'); d.appendChild(el('small', '', a[0])); d.appendChild(el('b', '', a[1])); d.appendChild(el('span', '', a[2])); d.appendChild(el('u', i === 1 ? 'mid' : '')); k.appendChild(d);
@@ -328,22 +370,34 @@
     /* moyenne par semestre */
     var c0 = dcard('Moyenne par semestre'), sems = semestres().filter(function (s) { return !data.reglages.semestres.length || data.reglages.semestres.indexOf(s) >= 0; });
     var cols = el('div', 'cols');
+    [0, 5, 10, 15, 20].forEach(function (g) { var gl = el('div', 'gl'); gl.style.bottom = (26 + g * 6) + 'px'; gl.appendChild(el('span', '', String(g))); cols.appendChild(gl); });
     sems.forEach(function (sm) {
-      var ns = data.mats.filter(function (m) { return m.semestre === sm && typeof m.note === 'number'; }).map(function (m) { return m.note; });
-      var v = ns.length ? ns.reduce(function (a, b) { return a + b; }, 0) / ns.length : 0;
+      var v = semAvg(sm) || 0;
       var col = el('div', 'col'); col.appendChild(el('span', 'v', v ? fmt1(v) : ''));
-      var bar = el('i'); bar.style.height = Math.round(v / 20 * 100) + 'px'; col.appendChild(bar); col.appendChild(el('span', 'l', sm)); cols.appendChild(col);
+      var bar = el('i'); bar.style.height = Math.round(v * 6) + 'px'; col.appendChild(bar); col.appendChild(el('span', 'l', sm)); cols.appendChild(col);
     });
     c0.appendChild(cols); cards.sem = c0;
 
+    /* moyenne par UE */
+    var cu = dcard('Moyenne par UE · semestres cochés'), anyUE = false;
+    sems.forEach(function (sm) {
+      var gl = ueGroups(sm); if (!gl.length) return;
+      cu.appendChild(el('div', 'semh', sm + (semAvg(sm) !== null ? ' · moyenne ' + fmt1(semAvg(sm)) : '')));
+      var lw = el('div', 'mlist2');
+      gl.forEach(function (g) { anyUE = anyUE || g.ue; var r = el('div', 'mrow'); r.appendChild(el('span', 'mn', g.nom + (g.ue ? ' (' + g.notes.length + ' mat.)' : ''))); r.appendChild(nivBadge(g.avg, 'sm', g.avg / 4)); lw.appendChild(r); });
+      cu.appendChild(lw);
+    });
+    if (!cu.querySelector('.semh')) cu.appendChild(el('p', 'muted', 'Ajoute des notes /20 et range tes matières en UE dans l’onglet Examens.'));
+    var cuw = el('div', 'mscroll'); while (cu.children.length > 1) cuw.appendChild(cu.children[1]); cu.appendChild(cuw);
+    cards.ue = cu;
+
     /* moyenne par matière : même nom fusionné, semestres cochés */
     var cm = dcard('Moyenne par matière · semestres cochés'), gm = {};
-    L.forEach(function (x) { var k = x.matiere.trim().toLowerCase(); var g = gm[k] = gm[k] || { nom: x.matiere, s: 0, n: 0, sem: {}, nt: [] }; g.s += x.succes || 0; g.n++; g.sem[x.semestre] = 1; });
+    L.forEach(function (x) { var k = x.matiere.trim().toLowerCase(); var g = gm[k] = gm[k] || { nom: x.matiere, s: 0, n: 0, sem: {}, nt: [] }; g.s += lvl(x); g.n++; g.sem[x.semestre] = 1; });
     matsV.forEach(function (m) { var g = gm[m.nom.trim().toLowerCase()]; if (g && typeof m.note === 'number') g.nt.push(m.note); });
     var lm = Object.keys(gm).map(function (k) { var g = gm[k]; g.a = g.s / g.n; g.ns = Object.keys(g.sem).length; return g; }).sort(function (a, b) { return b.a - a.a; });
     if (!lm.length) cm.appendChild(el('p', 'muted', 'Aucun exercice dans les semestres cochés.'));
     else {
-      cm.appendChild(el('p', 'muted', 'Niveau moyen des exos (sur 5) ; les matières du même nom sont regroupées.'));
       var lw = el('div', 'mlist');
       lm.forEach(function (g) {
         var r = el('div', 'mrow'); r.appendChild(el('span', 'mn', g.nom + (g.ns > 1 ? ' (' + g.ns + ' sem.)' : '')));
@@ -359,7 +413,7 @@
     [['En retard', C_LATE], ['Prévu', C_NORM], ['Examen', C_EXAM]].forEach(function (a) { var sp = el('span'); var i = el('i'); i.style.background = a[1]; sp.appendChild(i); sp.appendChild(document.createTextNode(a[0])); lg.appendChild(sp); });
     c1.appendChild(lg);
     var cv = document.createElement('canvas'), sc = el('div', 'scrollx'); sc.appendChild(cv); c1.appendChild(sc);
-    var rep = plan().list.filter(function (o) { return !o.in; }).length; c1.appendChild(el('p', 'muted', 'Fais défiler vers la gauche pour voir les semaines suivantes. Chaque jour respecte ton planning (Réglages) : ce qui ne tient pas est reporté.')); cards.charge = c1; draws.charge = function () { drawCharge(cv, L, t); };
+    cards.charge = c1; draws.charge = function () { drawCharge(cv, L, t); };
 
     cards.habit = habitCard();
 
@@ -373,7 +427,7 @@
         var tr = document.createElement('tr'); tr.appendChild(el('td', 'sem', m.semestre)); tr.appendChild(el('td', '', m.nom));
         var dn = dnum(m.examen); tr.appendChild(el('td', 'c', fromNum(dn).slice(0, 6) + fromNum(dn).slice(8)));
         tr.appendChild(el('td', 'c b', 'J-' + (dn - t)));
-        var es = L.filter(function (x) { return x.semestre === m.semestre && x.matiere === m.nom; }), av = es.length ? es.reduce(function (a, x) { return a + (x.succes || 0); }, 0) / es.length : null;
+        var es = L.filter(function (x) { return x.semestre === m.semestre && x.matiere === m.nom; }), av = es.length ? es.reduce(function (a, x) { return a + lvl(x); }, 0) / es.length : null;
         var nt = el('td', 'c n'); if (av !== null) nt.appendChild(nivBadge(av, 'sm'));
         tr.appendChild(nt); tb.appendChild(tr);
       });
@@ -385,10 +439,11 @@
     var c2 = dcard('Succès : exos / examens');
     var cv2 = document.createElement('canvas'); c2.appendChild(cv2);
     var lg2 = el('div', 'legend'); [0, 1, 2, 3, 4, 5].forEach(function (i) { var sp = el('span'); var ic = el('i'); ic.style.background = C_NIV[i]; sp.appendChild(ic); sp.appendChild(document.createTextNode(i === 5 ? '5+' : String(i))); lg2.appendChild(sp); });
-    c2.appendChild(lg2); c2.appendChild(el('p', 'muted', 'Anneau extérieur : tous les exos · anneau intérieur : exos en mode examen')); cards.donut = c2; draws.donut = function () { drawDonut(cv2, L); };
+    c2.appendChild(lg2); cards.donut = c2; draws.donut = function () { drawDonut(cv2, L); };
 
-    var R = data.reglages, keys = ['sem', 'mat', 'charge', 'habit', 'exam', 'donut'];
-    var ord = (R.dashOrdre || []).filter(function (k) { return keys.indexOf(k) >= 0; }); keys.forEach(function (k) { if (ord.indexOf(k) < 0) ord.push(k); });
+    cards.charge.classList.add('wide'); cards.habit.classList.add('wide');
+    var R = data.reglages, keys = ['sem', 'ue', 'mat', 'charge', 'habit', 'exam', 'donut'];
+    var ord = (R.dashOrdre || []).filter(function (k) { return keys.indexOf(k) >= 0; }); keys.forEach(function (k) { if (ord.indexOf(k) < 0) { if (k === 'ue' && ord.indexOf('sem') >= 0) ord.splice(ord.indexOf('sem') + 1, 0, k); else ord.push(k); } });
     var hid = R.dashCache || [];
     var ed = el('button', 'plain', dashEdit ? '✓ Terminé' : '⚙ Modifier l’affichage'); ed.type = 'button'; ed.style.margin = '0 0 12px';
     ed.addEventListener('click', function () { dashEdit = !dashEdit; renderDash(); }); box.appendChild(ed);
@@ -419,6 +474,18 @@
     return map;
   }
   function dur(m) { return m >= 60 ? Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + ('0' + m % 60).slice(-2) : '') : m + ' min'; }
+  /* UE : les matières d'une même UE se moyennent ensemble, puis les UE se moyennent entre elles */
+  function ueList(sem) { var u = []; data.mats.forEach(function (m) { if (m.semestre === sem && m.ue && u.indexOf(m.ue) < 0) u.push(m.ue); }); return u; }
+  function ueGroups(sem) {
+    var g = {}, order = [];
+    data.mats.forEach(function (m) {
+      if (m.semestre !== sem || typeof m.note !== 'number') return;
+      var k = m.ue ? 'ue:' + m.ue : 'mat:' + m.nom; if (!g[k]) { g[k] = { nom: m.ue || m.nom, ue: !!m.ue, notes: [], sem: sem }; order.push(k); }
+      g[k].notes.push(m.note);
+    });
+    return order.map(function (k) { var x = g[k]; x.avg = x.notes.reduce(function (a, b) { return a + b; }, 0) / x.notes.length; return x; });
+  }
+  function semAvg(sem) { var l = ueGroups(sem); return l.length ? l.reduce(function (a, g) { return a + g.avg; }, 0) / l.length : null; }
   var habitYear = new Date().getFullYear();
   function habitCard() {
     var c = dcard('Régularité · temps de révision par jour'), t = TODAY(), Y = habitYear;
@@ -430,7 +497,8 @@
     var FM = faitsMap(), mx = 1, tot = 0;
     for (var d = j1; d <= j31; d++) { var v0 = FM[new Date(d * DAY).toISOString().slice(0, 10)] || 0; tot += v0; if (v0 > mx) mx = v0; }
     var cols = ['#f6e9ee', '#f9d3e0', '#f0a9c0', '#e0678f', '#a33c5e', '#7a1f3d'];
-    function lvl(v) { if (v <= 0) return 0; var f = v / mx; return f > .75 ? 5 : f > .5 ? 4 : f > .3 ? 3 : f > .12 ? 2 : 1; }
+    var seuils = [0, 30, 60, 120, 240, 1440];
+    function lvl(v) { if (v <= 0) return 0; return v <= 30 ? 1 : v <= 60 ? 2 : v <= 120 ? 3 : v <= 240 ? 4 : 5; }
     var wrap = el('div', 'habit'), lab = el('div', 'hl');
     ['L', 'M', 'M', 'J', 'V', 'S', 'D'].forEach(function (z) { lab.appendChild(el('span', '', z)); }); wrap.appendChild(lab);
     var sc = el('div', 'scrollx'), grid = el('div', 'hg'); grid.style.gridTemplateColumns = 'repeat(' + W + ',17px)';
@@ -447,7 +515,7 @@
     }
     sc.appendChild(grid); wrap.appendChild(sc); c.appendChild(wrap);
     setTimeout(function () { if (todayCell) sc.scrollLeft = Math.max(0, todayCell.offsetLeft - sc.clientWidth + 40); else if (Y < new Date().getFullYear()) sc.scrollLeft = sc.scrollWidth; }, 0);
-    var lg = el('div', 'legend'); lg.appendChild(document.createTextNode('Moins')); cols.forEach(function (k) { var i2 = el('i'); i2.style.background = k; lg.appendChild(i2); }); lg.appendChild(document.createTextNode('Plus (jusqu’à ' + dur(mx) + ') · total ' + dur(tot)));
+    var lg = el('div', 'legend'); ['0', '≤ 30 min', '≤ 1 h', '≤ 2 h', '≤ 4 h', '> 4 h (max 24 h)'].forEach(function (tx, i3) { var sp = el('span'), i2 = el('i'); i2.style.background = cols[i3]; sp.appendChild(i2); sp.appendChild(document.createTextNode(tx)); lg.appendChild(sp); }); 
     c.appendChild(lg); return c;
   }
   function drawDonut(cv, L) {
@@ -480,7 +548,7 @@
     var cand = [];
     data.ex.forEach(function (x, i) { if (visible(x) && x.evalue) cand.push({ x: x, r: revision(x), ex: modeExam(x), i: i, m: mins(x) }); });
     cand.sort(function (a, b) {
-      return ((a.ex ? 0 : 1) * 1e11 + a.r * 1e5 + (a.x.succes || 0) * 1e4 + a.i) - ((b.ex ? 0 : 1) * 1e11 + b.r * 1e5 + (b.x.succes || 0) * 1e4 + b.i);
+      return ((a.ex ? 0 : 1) * 1e11 + a.r * 1e5 + lvl(a.x) * 1e4 + a.i) - ((b.ex ? 0 : 1) * 1e11 + b.r * 1e5 + lvl(b.x) * 1e4 + b.i);
     });
     var done = {};
     for (var d = 0; d < N; d++) {
@@ -524,14 +592,15 @@
   function renderSet() {
     var box = $('v-set'); box.textContent = ''; var R = data.reglages;
     var c1 = el('div', 'card'); c1.appendChild(el('h2', '', 'Intervalles de révision'));
-    c1.appendChild(el('p', 'muted', 'Prochaine révision = date de l’exo + intervalle de sa note (en jours).'));
     var tb = document.createElement('table');
-    for (var n = 0; n < 12; n++) (function (n) {
+    for (var n = 0; n < 6; n++) (function (n) {
       var tr = document.createElement('tr'), a = document.createElement('td'), b = document.createElement('td');
       a.textContent = n + (NIV[n] ? ' · ' + NIV[n] : ''); b.appendChild(numInput(R.intervalles[n], function (v) { R.intervalles[n] = v === null ? 0 : v; }, '80px'));
       tr.appendChild(a); tr.appendChild(b); tb.appendChild(tr);
     })(n);
-    c1.appendChild(tb); box.appendChild(c1);
+    c1.appendChild(tb);
+    var lp = el('label', '', 'Après un 5 : chaque 5 de plus d’affilée (note 6 = 2 fois 5 de suite, note 7 = 3 fois…) repousse la révision de … jours'); lp.appendChild(numInput(R.pasApres5, function (v) { R.pasApres5 = v === null ? 0 : v; })); c1.appendChild(lp);
+    box.appendChild(c1);
 
     var c2 = el('div', 'card'); c2.appendChild(el('h2', '', 'Mode examen'));
     [['Début du mode examen : jours avant l’examen', 'debutExam'], ['Butoire : seuil — un exo fait plus de … jours avant l’examen est « tôt », sinon « tard »', 'seuilButoire'], ['Butoire si fait tôt : ne plus réviser … jours avant l’examen', 'butoireSi'], ['Butoire sinon (fait tard) : ne plus réviser … jours avant l’examen (0 = jusqu’au jour J)', 'butoireSinon'], ['Minutes comptées par exo sans durée', 'minutesDefaut']].forEach(function (a) {
@@ -540,7 +609,6 @@
     box.appendChild(c2);
 
     var c3 = el('div', 'card'); c3.appendChild(el('h2', '', 'Planning de la semaine (minutes)'));
-    c3.appendChild(el('p', 'muted', 'Temps de révision dispo chaque jour. Vide = sans limite, 0 = jour de repos.'));
     JOURS.forEach(function (j, i) { var lb = el('label', '', j); lb.appendChild(numInput(R.planning[i], function (v) { R.planning[i] = v; })); c3.appendChild(lb); });
     box.appendChild(c3);
   }
@@ -568,18 +636,18 @@
     ev.preventDefault();
     var o = { intitule: $('fTitre').value.trim(), succes: +$('fSucces').value, semestre: $('fSem').value, matiere: $('fMat').value, minutes: $('fMin').value ? +$('fMin').value : null, evalue: $('fDate').value };
     if (!o.matiere || !o.evalue) { toast('Choisis une matière et une date.'); return; }
-    if (editingId) { data.ex.forEach(function (x) { if (x.id === editingId) Object.assign(x, o); }); }
+    if (editingId) { data.ex.forEach(function (x) { if (x.id === editingId) { if (x.succes !== o.succes) x.p5 = 0; Object.assign(x, o); } }); }
     else { o.id = newId(); data.ex.push(o); }
     save(); $('editor').close(); render(); toast('Exercice enregistré.');
   }
   function openDone(id) {
     doingId = id; var x = data.ex.filter(function (e) { return e.id === id; })[0]; if (!x) return;
     $('doneTitle').textContent = x.matiere + (x.intitule ? ' · ' + x.intitule : '');
-    $('doneTxt').textContent = 'Comment ça s’est passé ? Choisis ton niveau de réussite : la prochaine révision se calcule toute seule.';
+    $('doneTxt').textContent = '';
     var b = $('doneBtns'); b.textContent = '';
     NIV.forEach(function (n, i) {
       var bt = el('button', '', String(i)); bt.type = 'button'; bt.appendChild(el('small', '', n));
-      bt.addEventListener('click', function () { addHist(x, i); x.succes = i; x.evalue = todayISO(); save(); $('doneDlg').close(); render(); toast('Prochaine révision : ' + fromNum(revision(x))); });
+      bt.addEventListener('click', function () { addHist(x, i); x.succes = i; if (i < 5) x.p5 = 0; x.evalue = todayISO(); save(); $('doneDlg').close(); render(); toast('Prochaine révision : ' + fromNum(revision(x))); });
       b.appendChild(bt);
     });
     $('doneDlg').showModal();
@@ -679,7 +747,7 @@
       var ev = toISO(T[rr + ',' + cE]);
       if (!sem || !mat || typeof suc !== 'number' || !ev) continue;
       var ti = cT ? T[rr + ',' + cT] : '', mn = cD ? T[rr + ',' + cD] : null;
-      out.ex.push({ id: newId() + rr, intitule: ti !== undefined && ti !== null ? String(ti) : '', succes: Math.max(0, Math.min(11, Math.round(suc))), semestre: String(sem), matiere: String(mat), minutes: typeof mn === 'number' && mn > 0 ? mn : null, evalue: ev });
+      out.ex.push({ id: newId() + rr, intitule: ti !== undefined && ti !== null ? String(ti) : '', succes: Math.max(0, Math.min(5, Math.round(suc))), p5: Math.round(suc) >= 5 ? Math.min(7, Math.round(suc) - 4) : 0, semestre: String(sem), matiere: String(mat), minutes: typeof mn === 'number' && mn > 0 ? mn : null, evalue: ev });
       seen[sem + '|' + mat] = [String(sem), String(mat)];
     }
     var pn = keys.filter(function (k) { return norm(k).indexOf('param') >= 0; })[0], P = pn ? sh[pn] : null, ex = {};
@@ -764,7 +832,7 @@
 
   /* ---------- affichage ---------- */
   function render() {
-    renderFilters();
+    renderFilters(); document.body.classList.toggle('wide', view === 'dash');
     ['today', 'exos', 'mats', 'dash', 'set'].forEach(function (v) { $('v-' + v).hidden = v !== view; });
     document.querySelectorAll('#tabs button').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.view === view ? 'true' : 'false'); });
     $('addBtn').hidden = view !== 'exos';
@@ -794,5 +862,9 @@
   syncAuto();
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') syncAuto(); });
   window.addEventListener('online', syncAuto);
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () { /* hors ligne non dispo */ });
+  if ('serviceWorker' in navigator) {
+    var hadSW = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js').catch(function () { /* hors ligne non dispo */ });
+    navigator.serviceWorker.addEventListener('controllerchange', function () { if (hadSW) location.reload(); });
+  }
 })();
