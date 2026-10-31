@@ -359,6 +359,11 @@
     return 'rgb(' + [0, 1, 2].map(function (i) { return Math.round(p[i] + (q[i] - p[i]) * f); }).join(',') + ')';
   }
   /* niveau minimal pour ne plus avoir à réviser avant l'examen : le plus petit niveau dont l'intervalle couvre les jours restants */
+  /* motif vagues rose pâle (clip déjà appliqué) */
+  function waves(g, x, y, w, h, col, step, amp, lw) {
+    g.strokeStyle = col; g.lineWidth = lw; var per = step * 2;
+    for (var yy = y - amp; yy < y + h + amp; yy += step) { g.beginPath(); for (var xx = x - per; xx <= x + w + per; xx += 2) { var yv = yy + Math.sin((xx - x) / per * Math.PI * 2) * amp; if (xx === x - per) g.moveTo(xx, yv); else g.lineTo(xx, yv); } g.stroke(); }
+  }
   function needLevel(d) { for (var n = 0; n <= 11; n++) if (interval(n) >= d) return n; return 11; }
   function nivBadge(v, sz, cv) {
     var c = cv === undefined ? v : cv, b = el('div', 'niv' + (sz ? ' ' + sz : ''), fmt1(Math.round(v * 10) / 10)); b.style.background = scale(c); b.style.color = c < 3.2 ? '#fff' : '#5c1530'; return b;
@@ -420,7 +425,7 @@
     /* charge */
     var c1 = dcard('Charge de révision à venir');
     var lg = el('div', 'legend');
-    [['En retard', C_LATE], ['Prévu', C_NORM], ['Examen (hachures)', 'hatch']].forEach(function (a) { var sp = el('span'); var i = el('i'); if (a[1] === 'hatch') i.className = 'hat'; else i.style.background = a[1]; sp.appendChild(i); sp.appendChild(document.createTextNode(a[0])); lg.appendChild(sp); });
+    [['En retard', C_LATE], ['Prévu', C_NORM], ['Examen (vagues)', 'hatch']].forEach(function (a) { var sp = el('span'); var i = el('i'); if (a[1] === 'hatch') i.className = 'hat'; else i.style.background = a[1]; sp.appendChild(i); sp.appendChild(document.createTextNode(a[0])); lg.appendChild(sp); });
     c1.appendChild(lg);
     var cv = document.createElement('canvas'), sc = el('div', 'scrollx'); sc.appendChild(cv); c1.appendChild(sc);
     cards.charge = c1; draws.charge = function () { drawCharge(cv, L, t); };
@@ -442,9 +447,9 @@
         tr.appendChild(nt); tr.className = 'top'; tb.appendChild(tr);
         var J = dn - t, Rg = data.reglages, X = J > Rg.seuilButoire ? Rg.butoireSi : Rg.butoireSinon, need = Math.round(Math.max(0, Math.min(5, 5 * (1 - Math.max(0, J - X) / Math.max(1, Rg.debutExam)))) * 10) / 10;
         var pr = document.createElement('tr'), pd = document.createElement('td'); pd.colSpan = 5; pd.className = 'prog';
-        var trk = el('div', 'trk sq');
-        for (var q = 0; q < 5; q++) { var cell = el('span', 'cell'), f2 = el('i', 'fl'); f2.style.width = Math.max(0, Math.min(1, need - q)) * 100 + '%'; cell.appendChild(f2); trk.appendChild(cell); }
-        if (av !== null) { var me = el('u', 'me'), pos = Math.min(5, av), k = Math.min(4, Math.floor(pos)); me.style.left = 'calc(' + (k * 20) + '% + ' + ((pos - k) * 20 * 0.96) + '%)'; me.className = 'me' + (av + 0.05 < need ? ' behind' : ''); trk.appendChild(me); }
+        var trk = el('div', 'trk'), fl = el('i', 'fl'); fl.style.width = Math.min(100, need / 5 * 100) + '%'; trk.appendChild(fl);
+        for (var q = 1; q < 5; q++) { var tk = el('b', 'tk'); tk.style.left = (q * 20) + '%'; trk.appendChild(tk); }
+        if (av !== null) { var me = el('u', 'me'); me.style.left = Math.min(100, av / 5 * 100) + '%'; me.className = 'me' + (av + 0.05 < need ? ' behind' : ''); trk.appendChild(me); }
         var lab = el('span', 'plab', 'Attendu ' + fmt1(need) + ' · Toi ' + (av === null ? '–' : fmt1(Math.round(av * 10) / 10)));
         pd.appendChild(trk); pd.appendChild(lab); pr.appendChild(pd); tb.appendChild(pr);
       });
@@ -563,7 +568,7 @@
         if (!v) return; var a1 = a0 + v / tot * Math.PI * 2;
         g.beginPath(); g.arc(cx, cy, ra, a0, a1); g.arc(cx, cy, rb, a1, a0, true); g.closePath();
         g.fillStyle = C_NIV[i]; g.fill();
-        if (hatch) { g.save(); g.clip(); g.strokeStyle = 'rgba(255,255,255,.45)'; g.lineWidth = 1.5; for (var hx = -h; hx < w + h; hx += 7) { g.beginPath(); g.moveTo(hx, 0); g.lineTo(hx + h, h); g.stroke(); } g.restore(); }
+        if (hatch) { g.save(); g.clip(); waves(g, cx - ra, cy - ra, ra * 2, ra * 2, 'rgba(249,211,224,.9)', 7 * K / 1.2, 1.8 * K / 1.2, 1.2); g.restore(); }
         g.lineWidth = 2; g.strokeStyle = '#fff'; g.beginPath(); g.arc(cx, cy, ra, a0, a1); g.arc(cx, cy, rb, a1, a0, true); g.closePath(); g.stroke();
         if (v / tot > .05) { var am = (a0 + a1) / 2, rr = (ra + rb) / 2; g.fillStyle = i >= 4 ? '#5c1530' : '#fff'; g.font = 'bold ' + Math.round(12 * K) + 'px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(v, cx + Math.cos(am) * rr, cy + Math.sin(am) * rr); }
         a0 = a1;
@@ -608,7 +613,7 @@
       var x0 = L0 + j * bw + bw * 0.14, ww = bw * 0.72, yy = B;
       [[late[j], C_LATE, 0], [lateEx[j], C_LATE, 1], [nm[j], C_NORM, 0], [ex[j], C_NORM, 1]].forEach(function (s) {
         if (!s[0]) return; var hh = (B - T) * s[0] / mx; g.fillStyle = s[1]; g.fillRect(x0, yy - hh, ww, hh);
-        if (s[2]) { g.save(); g.beginPath(); g.rect(x0, yy - hh, ww, hh); g.clip(); g.strokeStyle = 'rgba(250,212,228,.95)'; g.lineWidth = 1.8; for (var hx = x0 - hh; hx < x0 + ww + hh; hx += 5) { g.beginPath(); g.moveTo(hx, yy); g.lineTo(hx + hh, yy - hh); g.stroke(); } g.restore(); }
+        if (s[2]) { g.save(); g.beginPath(); g.rect(x0, yy - hh, ww, hh); g.clip(); waves(g, x0, yy - hh, ww, hh, '#f9d3e0', 5, 1.6, 1.2); g.restore(); }
         yy -= hh;
       });
       var dd = new Date((t + j) * DAY), cx = x0 + ww / 2; g.fillStyle = '#5c1530'; g.font = '9px system-ui';
