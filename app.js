@@ -103,6 +103,7 @@
     var budget = budgetDuJour(), fait = dejaFait(), cum = 0;
     list.forEach(function (o) {
       var m = mins(o.x);
+      if (o.x.reporte === todayISO()) { o.rep = true; o.in = false; return; } /* reporté par toi : ne prend pas de temps aujourd'hui */
       o.in = (budget >= 1e9) || cum + m <= budget - fait || (cum === 0 && budget > fait);
       if (o.in) cum += m; /* un exo qui ne rentre pas est reporté ; un plus court peut prendre sa place */
     });
@@ -153,6 +154,12 @@
     if (o.ex) p.appendChild(el('span', 'pill', 'mode examen · J-' + (examNum(x.semestre, x.matiere) - TODAY())));
     p.appendChild(el('span', 'pill', mins(x) + ' min'));
     c.appendChild(p);
+    if (withBtn) {
+      var act = el('div'); act.style.marginTop = '8px';
+      var rb = el('button', 'plain', o.rep ? 'Remettre aujourd’hui' : 'Reporter'); rb.type = 'button';
+      rb.addEventListener('click', function () { if (o.rep) { delete x.reporte; toast('Remis dans ta liste.'); } else { x.reporte = todayISO(); toast('Reporté : ton temps va aux autres exos.'); } save(); render(); });
+      act.appendChild(rb); c.appendChild(act);
+    }
     c.addEventListener('click', function (e) { if (e.target.tagName !== 'BUTTON') openEditor(x.id); });
     return c;
   }
@@ -166,13 +173,17 @@
     head.appendChild(el('div', 'muted', 'Budget du jour : ' + bud + ' · déjà fait : ' + P.fait + ' min · prévu : ' + tot + ' min'));
     var bar = el('div', 'bar'), fill = el('i'); fill.style.width = (P.budget >= 1e9 ? 0 : Math.min(100, Math.round(P.fait / P.budget * 100))) + '%'; bar.appendChild(fill); head.appendChild(bar);
     box.appendChild(head);
-    var inP = P.list.filter(function (o) { return o.in; }), out = P.list.filter(function (o) { return !o.in; });
+    var inP = P.list.filter(function (o) { return o.in; }), out = P.list.filter(function (o) { return !o.in && !o.rep; }), reps = P.list.filter(function (o) { return o.rep; });
     if (!inP.length) box.appendChild(el('p', 'muted', data.ex.length ? 'Rien à faire aujourd’hui. Bravo !' : 'Aucun exercice. Ajoute-en avec le bouton + (onglet Exos) ou restaure ta sauvegarde (menu ⋮).'));
     inP.forEach(function (o) { box.appendChild(exoCard(o, true)); });
     if (out.length) {
       var det = document.createElement('details'); det.appendChild(el('summary', '', 'Reportés à demain ou après (' + out.length + ')'));
       out.slice(0, 60).forEach(function (o) { det.appendChild(exoCard(o, true)); });
       box.appendChild(det);
+    }
+    if (reps.length) {
+      var dr = document.createElement('details'); dr.appendChild(el('summary', '', 'Reportés par toi aujourd’hui (' + reps.length + ')'));
+      reps.forEach(function (o) { dr.appendChild(exoCard(o, true)); }); box.appendChild(dr);
     }
     box.appendChild(histBlock());
   }
@@ -399,12 +410,12 @@
     box.appendChild(k);
 
     /* moyenne par semestre */
-    var c0 = dcard('Moyenne par semestre'), sems = semestres().filter(function (s) { return !data.reglages.semestres.length || data.reglages.semestres.indexOf(s) >= 0; });
+    var c0 = dcard('Moyenne par semestre'), sems = semestres(); /* toujours tous les semestres, sans filtre */
     var cols = el('div', 'cols');
     [0, 5, 10, 15, 20].forEach(function (g) { var gl = el('div', 'gl'); gl.style.bottom = (26 + g * 6) + 'px'; gl.appendChild(el('span', '', String(g))); cols.appendChild(gl); });
-    sems.filter(function (sm) { return semAvg(sm); }).forEach(function (sm) {
+    sems.forEach(function (sm) {
       var v = semAvg(sm) || 0;
-      var col = el('div', 'col'); col.appendChild(el('span', 'v', v ? fmt1(v) : ''));
+      var col = el('div', 'col'); col.appendChild(el('span', 'v', v ? fmt1(v) : '–'));
       var bar = el('i'); bar.style.height = Math.round(v * 6) + 'px'; col.appendChild(bar); col.appendChild(el('span', 'l', sm)); cols.appendChild(col);
     });
     c0.appendChild(cols); cards.sem = c0;
@@ -676,6 +687,7 @@
       var cum = 0, fait = d === 0 ? dejaFait() : 0; if (RET && d > 0) srt();
       cand.forEach(function (o) {
         if (done[o.i] || o.r >= t + d + 1) return;
+        if (d === 0 && o.x && o.x.reporte === todayISO()) return;
         if (bud >= 1e9 || cum + o.m <= bud - fait || (cum === 0 && bud > fait)) {
           cum += o.m;
           done[o.i] = 1; if (!o.v) cnt[d]++;
@@ -1047,7 +1059,7 @@
   document.querySelectorAll('#tabs button').forEach(function (b) { b.addEventListener('click', function () { try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { /* sans vibration */ } view = b.dataset.view; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } shown = 120; window._top = 1; render(); window.scrollTo(0, 0); }); });
   $('addBtn').addEventListener('click', function () { openEditor(null); });
   $('search').addEventListener('input', function () { shown = 120; renderExos(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 99'; $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 101'; $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
   $('syncUrlBtn').addEventListener('click', function () { $('menu').close(); syncNow(true); });
