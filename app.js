@@ -2,6 +2,13 @@
   'use strict';
   var KEY = 'mes-exercices-v1';
   var DAY = 86400000;
+  var THEMES = [['Bordeaux', 0, '#7a1f3d'], ['Bleu', -125, '#1f4d7a'], ['Vert', 175, '#1f7a4d'], ['Violet', -70, '#5a1f7a']];
+  function themeDeg() { var n = ''; try { n = localStorage.getItem('mes-exercices-theme') || ''; } catch (e) { /* ignoré */ } var t = THEMES.filter(function (a) { return a[0] === n; })[0] || THEMES[0]; return t; }
+  function applyTheme() {
+    var t = themeDeg(); document.documentElement.style.filter = t[1] ? 'hue-rotate(' + t[1] + 'deg)' : '';
+    var m = document.querySelector('meta[name=theme-color]'); if (m) m.setAttribute('content', t[2]);
+  }
+  applyTheme();
   var NIV = ['Échec total', 'Beaucoup d’erreurs', 'Compréhension partielle', 'Compréhension correcte', 'Presque parfait', 'Maîtrise totale'];
   var JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
   var DEF = { intervalles: [2, 4, 10, 25, 35, 50, 70, 90, 110, 130, 150, 170], minutesDefaut: 5, debutExam: 50, seuilButoire: 15, butoireSi: 5, butoireSinon: 0, planning: [60, 60, 30, 180, 30, 180, 30], semestres: [], ordreSem: 'manuel', semOrdre: [], dashOrdre: [], dashCache: [], pasApres5: 20, oubliMin: 3 };
@@ -28,7 +35,7 @@
     if (Array.isArray(d.ex)) d.ex.forEach(function (x) {
       if (x.succes > 5) { var r = runOf(x.id, d.hist); x.p5 = Math.max(0, x.succes - 4 - r.run); x.succes = 5; }
     });
-    return { ex: Array.isArray(d.ex) ? d.ex : [], mats: Array.isArray(d.mats) ? d.mats : [], hist: Array.isArray(d.hist) ? d.hist : [], jours: d.jours && typeof d.jours === 'object' ? d.jours : {}, ues: Array.isArray(d.ues) ? d.ues : [], reglages: r };
+    return { ex: Array.isArray(d.ex) ? d.ex : [], mats: Array.isArray(d.mats) ? d.mats : [], hist: Array.isArray(d.hist) ? d.hist : [], jours: d.jours && typeof d.jours === 'object' ? d.jours : {}, ues: Array.isArray(d.ues) ? d.ues : [], corbeille: Array.isArray(d.corbeille) ? d.corbeille : [], reglages: r };
   }
   function load() { try { var raw = localStorage.getItem(KEY); if (raw) data = fix(JSON.parse(raw)); } catch (e) { /* départ à vide */ } }
   function save() {
@@ -159,6 +166,7 @@
     if (o.ex) p.appendChild(el('span', 'pill', 'mode examen · J-' + (examNum(x.semestre, x.matiere) - TODAY())));
     p.appendChild(el('span', 'pill', mins(x) + ' min'));
     c.appendChild(p);
+    if (x.note) c.appendChild(el('div', 'xnote', x.note));
     c.addEventListener('click', function (e) { if (e.target.tagName !== 'BUTTON') openEditor(x.id); });
     return c;
   }
@@ -195,19 +203,29 @@
     data.hist.push({ id: x.id, ts: Date.now(), jour: todayISO(), avant: { succes: x.succes, evalue: x.evalue || '' }, niveau: niv, m: mins(x) });
   }
   function histBlock() {
-    var lim = Date.now() - 7 * DAY, L = (data.hist || []).filter(function (h) { return h.ts > lim; }).sort(function (a, b) { return b.ts - a.ts; });
+    var lim = Date.now() - 7 * DAY; data.corbeille = (data.corbeille || []).filter(function (c) { return c && c.ex && c.ts > lim; });
+    var L = (data.hist || []).filter(function (h) { return h.ts > lim; }).map(function (h) { return { ts: h.ts, h: h }; }).concat(data.corbeille.map(function (c) { return { ts: c.ts, c: c }; })).sort(function (a, b) { return b.ts - a.ts; });
     var det = document.createElement('details'); det.appendChild(el('summary', '', 'Historique de la semaine (' + L.length + ')'));
     if (!L.length) { det.appendChild(el('p', 'muted', 'Rien de fait cette semaine.')); return det; }
-    L.forEach(function (h) {
-      var x = data.ex.filter(function (e) { return e.id === h.id; })[0]; if (!x) return;
-      var c = el('div', 'card'), top = el('div', 'row2'), l = el('div');
-      l.appendChild(el('b', '', x.matiere + (x.intitule ? ' · ' + x.intitule : '')));
-      var d = new Date(h.ts); l.appendChild(el('div', 'muted', JOURS[(d.getDay() + 6) % 7] + ' ' + fromNum(dnum(h.jour)).slice(0, 5) + ' · niveau ' + h.avant.succes + ' → ' + h.niveau));
-      top.appendChild(l); c.appendChild(top);
-      var row = el('div'); row.style.marginTop = '8px';
-      var un = el('button', 'plain', 'Annuler'); un.type = 'button';
-      un.addEventListener('click', function () { x.succes = h.avant.succes; x.evalue = h.avant.evalue; data.hist = data.hist.filter(function (z) { return z !== h; }); save(); render(); toast('Remis comme avant.'); });
-      row.appendChild(un); c.appendChild(row); det.appendChild(c);
+    L.forEach(function (it) {
+      var c = el('div', 'card'), top = el('div', 'row2'), l = el('div'), row = el('div'); row.style.marginTop = '8px';
+      var d = new Date(it.ts), jour = JOURS[(d.getDay() + 6) % 7] + ' ' + ('0' + d.getDate()).slice(-2) + '/' + ('0' + (d.getMonth() + 1)).slice(-2);
+      if (it.c) {
+        var cx = it.c.ex;
+        l.appendChild(el('b', '', cx.matiere + (cx.intitule ? ' · ' + cx.intitule : '')));
+        l.appendChild(el('div', 'muted', jour + ' · exercice supprimé'));
+        var rs = el('button', 'plain', 'Restaurer'); rs.type = 'button';
+        rs.addEventListener('click', function () { if (!data.ex.some(function (e) { return e.id === cx.id; })) data.ex.push(cx); data.corbeille = data.corbeille.filter(function (z) { return z !== it.c; }); save(); render(); toast('Exercice restauré.'); });
+        row.appendChild(rs);
+      } else {
+        var h = it.h, x = data.ex.filter(function (e) { return e.id === h.id; })[0]; if (!x) return;
+        l.appendChild(el('b', '', x.matiere + (x.intitule ? ' · ' + x.intitule : '')));
+        l.appendChild(el('div', 'muted', jour + ' · niveau ' + h.avant.succes + ' → ' + h.niveau));
+        var un = el('button', 'plain', 'Annuler'); un.type = 'button';
+        un.addEventListener('click', function () { x.succes = h.avant.succes; x.evalue = h.avant.evalue; data.hist = data.hist.filter(function (z) { return z !== h; }); save(); render(); toast('Remis comme avant.'); });
+        row.appendChild(un);
+      }
+      top.appendChild(l); c.appendChild(top); c.appendChild(row); det.appendChild(c);
     });
     return det;
   }
@@ -769,6 +787,15 @@
     setRow(c1, 'Après un 5 : chaque 5 de plus d’affilée (note 6 = 2 fois 5 de suite, note 7 = 3 fois…) repousse la révision de', R.pasApres5, function (v) { R.pasApres5 = v === null ? 0 : v; }, 'jours');
     box.appendChild(c1);
 
+    var cT = setCard('Thème', 'cal'), sw = el('div', 'seg'), cur = themeDeg();
+    THEMES.forEach(function (t) {
+      var b = el('button', cur[0] === t[0] ? 'on' : '', t[0]); b.type = 'button';
+      var dot = el('i', 'tdot'); dot.style.filter = 'hue-rotate(' + (t[1] - cur[1]) + 'deg)'; b.insertBefore(dot, b.firstChild);
+      b.addEventListener('click', function () { try { localStorage.setItem('mes-exercices-theme', t[0]); } catch (e) { /* ignoré */ } applyTheme(); render(); });
+      sw.appendChild(b);
+    });
+    cT.appendChild(sw); box.appendChild(cT);
+
     var c2 = setCard('Mode examen', 'flag');
     [['Début du mode examen : jours avant l’examen', 'debutExam', 'jours'], ['Butoire : seuil — un exo fait plus de … jours avant l’examen est « tôt », sinon « tard »', 'seuilButoire', 'jours'], ['Butoire si fait tôt : ne plus réviser … jours avant l’examen', 'butoireSi', 'jours'], ['Butoire sinon (fait tard) : ne plus réviser … jours avant l’examen (0 ou 1 = jusqu’à la veille de l’examen)', 'butoireSinon', 'jours'], ['Minutes comptées par exo sans durée', 'minutesDefaut', 'min']].forEach(function (a) {
       setRow(c2, a[0], R[a[1]], function (v) { R[a[1]] = v === null ? 0 : v; }, a[2]);
@@ -798,12 +825,12 @@
     $('fSucces').textContent = ''; NIV.forEach(function (n, i) { var o = el('option', '', i + ' · ' + n); o.value = i; $('fSucces').appendChild(o); });
     fillSem(x ? x.semestre : (data.reglages.semestres[0] || null)); if (x) fillMat(x.matiere);
     $('fTitre').value = x ? x.intitule || '' : ''; $('fSucces').value = x ? x.succes : 3;
-    $('fDate').value = x ? x.evalue : todayISO(); $('fMin').value = x && x.minutes ? x.minutes : '';
+    $('fDate').value = x ? x.evalue : todayISO(); $('fMin').value = x && x.minutes ? x.minutes : ''; $('fNote').value = x && x.note ? x.note : '';
     $('delBtn').hidden = !x; $('editor').showModal();
   }
   function saveEditor(ev) {
     ev.preventDefault();
-    var o = { intitule: $('fTitre').value.trim(), succes: +$('fSucces').value, semestre: $('fSem').value, matiere: $('fMat').value, minutes: $('fMin').value ? +$('fMin').value : null, evalue: $('fDate').value };
+    var o = { intitule: $('fTitre').value.trim(), succes: +$('fSucces').value, semestre: $('fSem').value, matiere: $('fMat').value, minutes: $('fMin').value ? +$('fMin').value : null, evalue: $('fDate').value, note: $('fNote').value.trim() };
     if (!o.matiere || !o.evalue) { toast('Choisis une matière et une date.'); return; }
     if (editingId) { data.ex.forEach(function (x) { if (x.id === editingId) { if (x.succes !== o.succes) x.p5 = 0; Object.assign(x, o); } }); }
     else { o.id = newId(); data.ex.push(o); }
@@ -998,6 +1025,9 @@
     var seen = {}; base.hist = base.hist || []; base.hist.forEach(function (h) { seen[h.id + '|' + h.ts] = 1; });
     (oth.hist || []).forEach(function (h) { if (!seen[h.id + '|' + h.ts]) { seen[h.id + '|' + h.ts] = 1; base.hist.push(h); } });
     base.hist.sort(function (a, b) { return a.ts - b.ts; });
+    var cs = {}; base.corbeille = base.corbeille || []; base.corbeille.forEach(function (c) { cs[c.ex.id + '|' + c.ts] = 1; });
+    (oth.corbeille || []).forEach(function (c) { if (c && c.ex && !cs[c.ex.id + '|' + c.ts]) { cs[c.ex.id + '|' + c.ts] = 1; base.corbeille.push(c); } });
+    base.ex = (base.ex || []).filter(function (x) { return !base.corbeille.some(function (c) { return c.ex.id === x.id; }); });
     var mm = {}; (base.mats || []).forEach(function (m) { mm[m.semestre + '|' + m.nom] = m; });
     (oth.mats || []).forEach(function (m) { var y = mm[m.semestre + '|' + m.nom]; if (!y) { base.mats.push(m); return; } Object.keys(m).forEach(function (k) { if ((y[k] === undefined || y[k] === '' || y[k] === null) && m[k] !== undefined) y[k] = m[k]; }); });
     var uu = {}; base.ues = base.ues || []; base.ues.forEach(function (u) { uu[u.semestre + '|' + u.nom] = 1; });
@@ -1065,7 +1095,7 @@
   document.querySelectorAll('#tabs button').forEach(function (b) { b.addEventListener('click', function () { try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { /* sans vibration */ } view = b.dataset.view; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } shown = 120; window._top = 1; render(); window.scrollTo(0, 0); }); });
   $('addBtn').addEventListener('click', function () { openEditor(null); });
   $('search').addEventListener('input', function () { shown = 120; renderExos(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 105'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 110'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
   $('syncUrlBtn').addEventListener('click', function () { $('menu').close(); syncNow(true); });
@@ -1077,7 +1107,7 @@
   $('form').addEventListener('submit', saveEditor);
   $('fSem').addEventListener('change', function () { fillMat(); });
   $('cancelBtn').addEventListener('click', function () { $('editor').close(); });
-  $('delBtn').addEventListener('click', function () { data.ex = data.ex.filter(function (x) { return x.id !== editingId; }); save(); $('editor').close(); render(); toast('Exercice supprimé.'); });
+  $('delBtn').addEventListener('click', function () { var gone = data.ex.filter(function (x) { return x.id === editingId; })[0]; if (gone) { data.corbeille = data.corbeille || []; data.corbeille.push({ ts: Date.now(), ex: gone }); } data.ex = data.ex.filter(function (x) { return x.id !== editingId; }); save(); $('editor').close(); render(); toast('Exercice supprimé.'); });
   $('doneCancel').addEventListener('click', function () { $('doneDlg').close(); });
   window.addEventListener('resize', function () { if (view === 'dash') renderDash(); });
   render();

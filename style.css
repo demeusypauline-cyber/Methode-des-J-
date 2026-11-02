@@ -32,7 +32,7 @@ main{padding:12px 16px;max-width:760px;margin:0 auto}
 .danger{border-color:var(--warn);color:var(--warn)}
 .plain{border-color:var(--line);color:var(--muted)}
 .row{display:block;width:100%;text-align:left;margin:6px 0}
-input,select{font:inherit;width:100%;padding:9px 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+input,select,textarea{font:inherit;width:100%;padding:9px 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
 label{display:block;margin:.6rem 0 0;font-size:.88rem;color:var(--muted)}
 dialog{border:0;border-radius:16px;padding:16px;width:min(92vw,440px);max-height:88vh;overflow:auto;background:var(--bg);color:var(--ink)}
 dialog::backdrop{background:#0006}
@@ -267,3 +267,9 @@ button.rep{padding:8px 10px;font-size:.8rem;width:auto;flex:none;align-self:cent
 
 .chw{display:flex;align-items:flex-start}.chw>canvas{flex:none}.chw .scrollx{flex:1;min-width:0}
 .doneT{display:flex;align-items:center;justify-content:space-between;gap:10px;font-weight:600;color:var(--bord);margin:8px 0}.doneT input{width:80px;text-align:center;padding:8px;border-radius:10px;border:1.5px solid var(--bord);font:inherit}
+/* très grands écrans (télé, grand moniteur) : tout est agrandi */
+@media (min-width:1600px){main,.chips{zoom:1.6}}
+@media (min-width:2800px){main,.chips{zoom:2.8}}
+@media (min-width:1600px){body.wide .chips{max-width:1100px}#v-dash > .dcard:not(.wide):not(.solo){aspect-ratio:auto;height:480px;max-height:none}}
+.tdot{box-sizing:border-box;border:1.5px solid #fff;box-shadow:0 0 0 1px #0002;display:inline-block;width:12px;height:12px;border-radius:50%;background:#7a1f3d;margin-right:6px;vertical-align:-1px}
+.xnote{margin-top:8px;padding:7px 10px;border-radius:10px;background:var(--rose3);color:var(--bord2);font-size:.8rem;white-space:pre-wrap;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}textarea{resize:vertical}

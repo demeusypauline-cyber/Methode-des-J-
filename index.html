@@ -47,7 +47,7 @@
   <button id="syncUrlBtn" class="row plain">Changer l’adresse de synchronisation</button>
   <button id="importSheet" class="row">Importer mon tableur (Excel .xlsx ou CSV)</button>
   <input id="sheetInput" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
-  <button id="exportBtn" class="row">Sauvegarder (fichier à garder dans ton Drive)</button>
+  <button id="exportBtn" class="row">Exporter mes données (format .json)</button>
   <button id="importFile" class="row">Restaurer depuis un fichier</button>
   <input id="fileInput" type="file" accept="application/json,.json" hidden>
   <p id="ver" style="text-align:center;font-size:.7rem;color:var(--muted);margin:6px 0 0"></p>
@@ -65,6 +65,7 @@
     </label>
     <label>Fait le <input id="fDate" type="date" required></label>
     <label>Durée en minutes (facultatif) <input id="fMin" type="number" min="0" inputmode="numeric"></label>
+    <label>Note (facultatif) <textarea id="fNote" rows="3" placeholder="Ex. : correction page 12 de mon cahier"></textarea></label>
     <div class="actions">
       <button type="button" id="delBtn" class="danger" hidden>Supprimer</button>
       <span class="grow"></span>
