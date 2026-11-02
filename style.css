@@ -264,3 +264,6 @@ header h1{font-size:1.15rem;letter-spacing:.2px}
 
 button.rep{padding:8px 10px;font-size:.8rem;width:auto;flex:none;align-self:center}
 .card .row2{gap:8px}
+
+.chw{display:flex;align-items:flex-start}.chw>canvas{flex:none}.chw .scrollx{flex:1;min-width:0}
+.doneT{display:flex;align-items:center;justify-content:space-between;gap:10px;font-weight:600;color:var(--bord);margin:8px 0}.doneT input{width:80px;text-align:center;padding:8px;border-radius:10px;border:1.5px solid var(--bord);font:inherit}
