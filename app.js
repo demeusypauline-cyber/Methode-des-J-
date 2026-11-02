@@ -18,6 +18,13 @@
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt !== undefined) e.textContent = txt; return e; }
   function toast(m) { var t = $('toast'); t.textContent = m; t.className = 'on'; clearTimeout(toast.t); toast.t = setTimeout(function () { t.className = ''; }, 2800); }
+  var IC = {
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    cal: '<rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/>',
+    flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>'
+  };
+  function ico(n) { var i = document.createElement('i'); i.className = 'ic'; i.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + IC[n] + '</svg>'; return i; }
+  function pillI(n, txt, cls) { var p = el('span', cls || 'pill'); p.appendChild(ico(n)); p.appendChild(document.createTextNode(txt)); return p; }
   function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
   function norm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
 
@@ -162,9 +169,9 @@
     var p = el('div'); p.style.marginTop = '6px';
     var late = Math.floor(TODAY() - o.r);
     if (late > 0) p.appendChild(el('span', 'pill late', 'en retard de ' + late + ' j'));
-    else p.appendChild(el('span', 'pill', 'à revoir ' + fromNum(o.r)));
-    if (o.ex) p.appendChild(el('span', 'pill', 'mode examen · J-' + (examNum(x.semestre, x.matiere) - TODAY())));
-    p.appendChild(el('span', 'pill', mins(x) + ' min'));
+    else p.appendChild(pillI('cal', 'à revoir ' + fromNum(o.r)));
+    if (o.ex) p.appendChild(pillI('flag', 'mode examen · J-' + (examNum(x.semestre, x.matiere) - TODAY())));
+    p.appendChild(pillI('clock', mins(x) + ' min'));
     c.appendChild(p);
     c.addEventListener('click', function (e) { if (e.target.tagName !== 'BUTTON') openEditor(x.id); });
     return c;
@@ -587,7 +594,12 @@
     var cur = el('b', 'hcur', ''), bt = el('button', 'plain', 'Aujourd’hui'); bt.type = 'button';
     nav.appendChild(cur); nav.appendChild(bt); c.appendChild(nav);
     var cols = ['#f6e9ee', '#f9d3e0', '#f0a9c0', '#e0678f', '#a33c5e', '#7a1f3d'];
-    function lvl(v) { if (v <= 0) return 0; return v <= 30 ? 1 : v <= 60 ? 2 : v <= 120 ? 3 : v <= 240 ? 4 : 5; }
+    var ST = [[249, 211, 224], [224, 103, 143], [122, 31, 61], [0, 0, 0]], SV = [0, 290, 720, 1440];
+    function colFor(v) {
+      if (v <= 0) return cols[0]; v = Math.min(1440, v); var i = 0; while (i < 2 && v > SV[i + 1]) i++;
+      var a = ST[i], b = ST[i + 1], k = (v - SV[i]) / (SV[i + 1] - SV[i]);
+      return 'rgb(' + [0, 1, 2].map(function (j) { return Math.round(a[j] + (b[j] - a[j]) * k); }).join(',') + ')';
+    }
     var wrap = el('div', 'habit'), lab = el('div', 'hl');
     ['L', 'M', 'M', 'J', 'V', 'S', 'D'].forEach(function (z) { lab.appendChild(el('span', '', z)); }); wrap.appendChild(lab);
     var sc = el('div', 'scrollx'), grid = el('div', 'hg'); grid.style.gridTemplateColumns = 'repeat(' + W + ',' + CW + 'px)';
@@ -600,7 +612,7 @@
       var dn2 = start + w2 * 7 + r, cell = el('i', 'hc'); cell.style.gridColumn = (w2 + 1); cell.style.gridRow = (r + 2);
       if (dn2 < j1 || dn2 > j31) cell.style.visibility = 'hidden'; else {
         var vv = FM[new Date(dn2 * DAY).toISOString().slice(0, 10)] || 0;
-        cell.style.background = dn2 > t ? '#faf3f6' : cols[lvl(vv)]; if (dn2 === t) { cell.style.outline = '2px solid #7a1f3d'; todayCell = cell; }
+        cell.style.background = dn2 > t ? '#faf3f6' : colFor(vv); if (dn2 === t) { cell.style.outline = '2px solid #7a1f3d'; todayCell = cell; }
         (function (n, v2) { cell.addEventListener('click', function () { toast(fromNum(n) + ' : ' + (v2 ? dur(v2) : 'rien de fait')); }); })(dn2, vv);
       }
       grid.appendChild(cell);
@@ -610,7 +622,8 @@
     function toToday(smooth) { if (todayCell) sc.scrollTo({ left: Math.max(0, todayCell.offsetLeft + CW + 2 - sc.clientWidth), behavior: smooth ? 'smooth' : 'auto' }); }
     sc.addEventListener('scroll', upd); bt.addEventListener('click', function () { toToday(true); });
     setTimeout(function () { if (window._hk != null) sc.scrollLeft = window._hk; else toToday(false); upd(); }, 0);
-    var lg = el('div', 'legend'); ['0', '≤ 30 min', '≤ 1 h', '≤ 2 h', '≤ 4 h', '> 4 h (max 24 h)'].forEach(function (tx, i3) { var sp = el('span'), i2 = el('i'); i2.style.background = cols[i3]; sp.appendChild(i2); sp.appendChild(document.createTextNode(tx)); lg.appendChild(sp); }); 
+    var lg = el('div', 'legend hleg'), z0 = el('span'), zi = el('i'); zi.style.background = cols[0]; z0.appendChild(zi); z0.appendChild(document.createTextNode('0')); lg.appendChild(z0);
+    var gb = el('span', 'gbar'); gb.appendChild(el('em', '', '1 min')); var gs = el('i', 'gstrip'); gs.style.background = 'linear-gradient(90deg,' + [1, 290, 720, 1440].map(colFor).join(',') + ')'; gb.appendChild(gs); gb.appendChild(el('em', '', '24 h')); lg.appendChild(gb);
     c.appendChild(lg); return c;
   }
   function tfmt(m) { m = Math.round(m); return m < 60 ? m + ' min' : (Math.round(m / 6) / 10).toString().replace('.', ',') + ' h'; }
@@ -1118,7 +1131,7 @@
   document.querySelectorAll('#tabs button').forEach(function (b) { b.addEventListener('click', function () { try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { /* sans vibration */ } view = b.dataset.view; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } shown = 120; window._top = 1; render(); window.scrollTo(0, 0); }); });
   $('addBtn').addEventListener('click', function () { openEditor(null); });
   $('search').addEventListener('input', function () { shown = 120; renderExos(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 116'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 121'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
   $('syncUrlBtn').addEventListener('click', function () { $('menu').close(); syncNow(true); });
