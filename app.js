@@ -555,6 +555,7 @@
     var R = data.reglages, keys = ['sem', 'mat', 'charge', 'habit', 'exam', 'donut', 'jring', 'oubli'];
     var ord = (R.dashOrdre || []).filter(function (k) { return keys.indexOf(k) >= 0; }); keys.forEach(function (k) { if (ord.indexOf(k) < 0) { if (k === 'ue' && ord.indexOf('sem') >= 0) ord.splice(ord.indexOf('sem') + 1, 0, k); else ord.push(k); } });
     var hid = R.dashCache || [];
+    R.dashLarge = R.dashLarge || {}; keys.forEach(function (k) { if (R.dashLarge[k] !== undefined) cards[k].classList.toggle('wide', !!R.dashLarge[k]); });
     var ed = el('button', 'editbtn' + (dashEdit ? ' on' : '')); ed.type = 'button'; ed.setAttribute('aria-label', dashEdit ? 'Terminer' : 'Modifier l’affichage');
     ed.innerHTML = dashEdit ? '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>' : '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M14 7l3 3"/></svg>';
     ed.addEventListener('click', function () { dashEdit = !dashEdit; renderDash(); }); dh.insertBefore(ed, dd0);
@@ -570,6 +571,7 @@
         function mk(txt, fn, dis) { var b = el('button', 'plain', txt); b.type = 'button'; b.disabled = !!dis; b.addEventListener('click', fn); tb.appendChild(b); }
         mk('↑', function () { if (i > 0) { ord.splice(i, 1); ord.splice(i - 1, 0, k); R.dashOrdre = ord; save(); renderDash(); } }, i === 0);
         mk('↓', function () { if (i < ord.length - 1) { ord.splice(i, 1); ord.splice(i + 1, 0, k); R.dashOrdre = ord; save(); renderDash(); } }, i === ord.length - 1);
+        if (window.innerWidth >= 760 && R.dashCols === 2) mk(c.classList.contains('wide') ? '▫ Réduire' : '↔ Agrandir', function () { R.dashLarge[k] = !c.classList.contains('wide'); save(); renderDash(); });
         mk(isH ? '👁 Afficher' : '🚫 Masquer', function () { R.dashCache = isH ? hid.filter(function (z) { return z !== k; }) : hid.concat([k]); R.dashOrdre = ord; save(); renderDash(); });
         c.insertBefore(tb, c.firstChild);
       }
@@ -1198,7 +1200,7 @@
   document.querySelectorAll('#tabs button').forEach(function (b) { b.addEventListener('click', function () { try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { /* sans vibration */ } view = b.dataset.view; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } shown = 120; window._top = 1; render(); window.scrollTo(0, 0); }); });
   $('addBtn').addEventListener('click', function () { openEditor(null); });
   $('search').addEventListener('input', function () { shown = 120; renderExos(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 143'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 146'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
   $('syncUrlBtn').addEventListener('click', function () { $('menu').close(); syncNow(true); });
