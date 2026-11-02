@@ -594,7 +594,7 @@
     var cur = el('b', 'hcur', ''), bt = el('button', 'plain', 'Aujourd’hui'); bt.type = 'button';
     nav.appendChild(cur); nav.appendChild(bt); c.appendChild(nav);
     var cols = ['#f6e9ee', '#f9d3e0', '#f0a9c0', '#e0678f', '#a33c5e', '#7a1f3d'];
-    var ST = [[249, 211, 224], [224, 103, 143], [122, 31, 61], [0, 0, 0]], SV = [0, 290, 720, 1440];
+    var ST = [[249, 211, 224], [224, 103, 143], [122, 31, 61], [0, 0, 0]], SV = [0, 120, 300, 1440];
     function colFor(v) {
       if (v <= 0) return cols[0]; v = Math.min(1440, v); var i = 0; while (i < 2 && v > SV[i + 1]) i++;
       var a = ST[i], b = ST[i + 1], k = (v - SV[i]) / (SV[i + 1] - SV[i]);
@@ -623,7 +623,7 @@
     sc.addEventListener('scroll', upd); bt.addEventListener('click', function () { toToday(true); });
     setTimeout(function () { if (window._hk != null) sc.scrollLeft = window._hk; else toToday(false); upd(); }, 0);
     var lg = el('div', 'legend hleg'), z0 = el('span'), zi = el('i'); zi.style.background = cols[0]; z0.appendChild(zi); z0.appendChild(document.createTextNode('0')); lg.appendChild(z0);
-    var gb = el('span', 'gbar'); gb.appendChild(el('em', '', '1 min')); var gs = el('i', 'gstrip'); gs.style.background = 'linear-gradient(90deg,' + [1, 290, 720, 1440].map(colFor).join(',') + ')'; gb.appendChild(gs); gb.appendChild(el('em', '', '24 h')); lg.appendChild(gb);
+    var gb = el('span', 'gbar'); gb.appendChild(el('em', '', '1 min')); var gs = el('i', 'gstrip'); gs.style.background = 'linear-gradient(90deg,' + [1, 120, 300, 1440].map(colFor).join(',') + ')'; gb.appendChild(gs); gb.appendChild(el('em', '', '24 h')); lg.appendChild(gb);
     c.appendChild(lg); return c;
   }
   function tfmt(m) { m = Math.round(m); return m < 60 ? m + ' min' : (Math.round(m / 6) / 10).toString().replace('.', ',') + ' h'; }
@@ -1131,7 +1131,7 @@
   document.querySelectorAll('#tabs button').forEach(function (b) { b.addEventListener('click', function () { try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { /* sans vibration */ } view = b.dataset.view; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } shown = 120; window._top = 1; render(); window.scrollTo(0, 0); }); });
   $('addBtn').addEventListener('click', function () { openEditor(null); });
   $('search').addEventListener('input', function () { shown = 120; renderExos(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 121'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 122'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
   $('syncUrlBtn').addEventListener('click', function () { $('menu').close(); syncNow(true); });
