@@ -13,7 +13,7 @@
   var JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
   var DEF = { intervalles: [2, 4, 10, 25, 35, 50, 70, 90, 110, 130, 150, 170], minutesDefaut: 5, debutExam: 50, seuilButoire: 15, butoireSi: 5, butoireSinon: 0, planning: [60, 60, 30, 180, 30, 180, 30], semestres: [], ordreSem: 'manuel', semOrdre: [], dashOrdre: [], dashCache: [], pasApres5: 20, oubliMin: 3 };
   var data = { ex: [], mats: [], reglages: JSON.parse(JSON.stringify(DEF)) };
-  var view = (function () { try { var v = localStorage.getItem('mes-exercices-onglet'); return ['dash', 'today', 'exos', 'mats', 'set'].indexOf(v) >= 0 ? v : 'today'; } catch (e) { return 'today'; } })(), editingId = null, doingId = null, shown = 120;
+  var view = (function () { try { if (!sessionStorage.getItem('mes-exercices-sess')) { sessionStorage.setItem('mes-exercices-sess', '1'); return 'dash'; } } catch (e) { /* ignoré */ } try { var v = localStorage.getItem('mes-exercices-onglet'); return ['dash', 'today', 'exos', 'mats', 'set'].indexOf(v) >= 0 ? v : 'today'; } catch (e) { return 'today'; } })(), editingId = null, doingId = null, shown = 120;
 
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt !== undefined) e.textContent = txt; return e; }
@@ -152,6 +152,32 @@
   }
 
   /* ---------- vue : à faire aujourd'hui ---------- */
+  /* ---------- chronomètre par exercice ---------- */
+  var CHK = 'mes-exercices-chrono';
+  function chGetAll() { try { var o = JSON.parse(localStorage.getItem(CHK) || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; } }
+  function chSetAll(o) { try { localStorage.setItem(CHK, JSON.stringify(o)); } catch (e) { /* ignoré */ } }
+  function chMs(c) { return c ? (c.acc || 0) + (c.start ? Date.now() - c.start : 0) : 0; }
+  function chFmt(ms) { var t = Math.floor(ms / 1000), h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), sec = t % 60; return (h ? h + ':' + ('0' + m).slice(-2) : ('0' + m).slice(-2)) + ':' + ('0' + sec).slice(-2); }
+  var CHI = { watch: '<circle cx="12" cy="13.5" r="7.5"/><path d="M12 9.5v4l2.5 1.5M9.5 3h5M12 3v3M18.2 6.8l1.2-1.2"/>', pause: '<path d="M9 6v12M15 6v12"/>', play: '<path d="M8 5.5v13l10-6.5Z"/>', x: '<path d="M7 7l10 10M17 7L7 17"/>' };
+  function chSvg(n, sz) { var i = document.createElement('i'); i.className = 'chi'; i.innerHTML = '<svg viewBox="0 0 24 24" width="' + sz + '" height="' + sz + '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + CHI[n] + '</svg>'; return i; }
+  function chronoEl(id) {
+    var box = el('div', 'chrono'), all = chGetAll(), c = all[id];
+    function redo() { var n = chronoEl(id); box.replaceWith(n); }
+    if (!c) {
+      var b = el('button', 'chgo'); b.type = 'button'; b.appendChild(chSvg('watch', 16)); b.appendChild(document.createTextNode('Chrono'));
+      b.addEventListener('click', function (e) { e.stopPropagation(); var a = chGetAll(); a[id] = { acc: 0, start: Date.now() }; chSetAll(a); redo(); });
+      box.appendChild(b); return box;
+    }
+    box.className = 'chrono on' + (c.start ? ' run' : '');
+    var t = el('span', 'chtime', chFmt(chMs(c))); t.dataset.chid = id; box.appendChild(chSvg('watch', 16)); box.appendChild(t);
+    var pb = el('button', 'chpp'); pb.type = 'button'; pb.title = c.start ? 'Pause' : 'Reprendre'; pb.appendChild(chSvg(c.start ? 'pause' : 'play', 14));
+    pb.addEventListener('click', function (e) { e.stopPropagation(); var a = chGetAll(), k = a[id]; if (!k) return; if (k.start) { k.acc = chMs(k); k.start = null; } else k.start = Date.now(); chSetAll(a); redo(); });
+    var xb = el('button', 'chx'); xb.type = 'button'; xb.title = 'Remettre à zéro'; xb.appendChild(chSvg('x', 12));
+    xb.addEventListener('click', function (e) { e.stopPropagation(); var a = chGetAll(); delete a[id]; chSetAll(a); redo(); });
+    box.appendChild(pb); box.appendChild(xb); return box;
+  }
+  setInterval(function () { var all = chGetAll(); document.querySelectorAll('.chtime').forEach(function (n) { var c = all[n.dataset.chid]; if (c && c.start) n.textContent = chFmt(chMs(c)); }); }, 1000);
+
   function exoCard(o, withBtn) {
     var x = o.x, c = el('div', 'card' + (o.ex ? ' exam' : ''));
     var top = el('div', 'row2');
@@ -173,7 +199,8 @@
     if (o.ex) p.appendChild(pillI('flag', 'mode examen · J-' + (examNum(x.semestre, x.matiere) - TODAY())));
     p.appendChild(pillI('clock', mins(x) + ' min'));
     c.appendChild(p);
-    c.addEventListener('click', function (e) { if (e.target.tagName !== 'BUTTON') openEditor(x.id); });
+    if (withBtn) c.appendChild(chronoEl(x.id));
+    c.addEventListener('click', function (e) { if (!e.target.closest('button')) openEditor(x.id); });
     return c;
   }
   function renderToday() {
@@ -470,6 +497,12 @@
         var b = el('button', (!data.reglages.prevOff) === o[0] ? 'on' : '', o[1]); b.type = 'button';
         b.addEventListener('click', function () { data.reglages.prevOff = !o[0]; save(); renderDash(); }); sg.appendChild(b); });
       c1.insertBefore(sg, lg);
+    }
+    lg.hidden = true;
+    {
+      var qb = el('button', 'qbtn', '?'); qb.type = 'button'; qb.title = 'Afficher la légende'; qb.setAttribute('aria-label', 'Légende');
+      qb.addEventListener('click', function () { lg.hidden = !lg.hidden; qb.className = 'qbtn' + (lg.hidden ? '' : ' on'); });
+      c1.querySelector('h2').appendChild(qb);
     }
     var cv = document.createElement('canvas'), cax = document.createElement('canvas'), sc = el('div', 'scrollx'), wr = el('div', 'chw'); sc.appendChild(cv); wr.appendChild(cax); wr.appendChild(sc); c1.appendChild(wr);
     cards.charge = c1; draws.charge = function () { drawCharge(cv, L, t, cax); };
@@ -851,11 +884,11 @@
   function openDone(id) {
     doingId = id; var x = data.ex.filter(function (e) { return e.id === id; })[0]; if (!x) return;
     $('doneTitle').textContent = x.matiere + (x.intitule ? ' · ' + x.intitule : '');
-    $('doneTxt').textContent = ''; $('doneMin').value = mins(x);
+    $('doneTxt').textContent = ''; $('doneMin').value = mins(x); var chk = chGetAll()[id]; if (chk && chMs(chk) >= 30000) { $('doneMin').value = Math.max(1, Math.round(chMs(chk) / 60000)); $('doneTxt').textContent = 'Temps repris de ton chrono : ' + chFmt(chMs(chk)) + '.'; }
     var b = $('doneBtns'); b.textContent = '';
     NIV.forEach(function (n, i) {
       var bt = el('button', '', String(i)); bt.type = 'button'; bt.appendChild(el('small', '', n));
-      bt.addEventListener('click', function () { addHist(x, i); x.succes = i; if (i < 5) x.p5 = 0; x.evalue = todayISO(); save(); $('doneDlg').close(); render(); toast('Prochaine révision : ' + fromNum(revision(x))); });
+      bt.addEventListener('click', function () { var ca = chGetAll(); delete ca[x.id]; chSetAll(ca); addHist(x, i); x.succes = i; if (i < 5) x.p5 = 0; x.evalue = todayISO(); save(); $('doneDlg').close(); render(); toast('Prochaine révision : ' + fromNum(revision(x))); });
       b.appendChild(bt);
     });
     $('doneDlg').showModal();
@@ -1009,6 +1042,7 @@
   function fmtTs(t) { var d = new Date(t); return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) + ' à ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); }
   function openVersions() {
     var box = $('versList'); box.textContent = ''; var v = versions();
+    if (syncUrl()) { var h0 = el('h3', '', 'Sur cet appareil'); h0.style.cssText = 'margin:4px 0 6px;color:var(--bord);font-size:.95rem'; box.appendChild(h0); }
     if (!v.length) box.appendChild(el('p', 'muted', 'Pas encore d’ancienne version. Elles se créent avant chaque import, chaque restauration, chaque mise à jour depuis le Drive, et une fois par jour.'));
     v.forEach(function (o) {
       var c = el('div', 'card'), t = el('div'); t.appendChild(el('b', '', fmtTs(o.ts))); t.appendChild(el('div', 'muted', o.label + ' · ' + o.data.ex.length + ' exercices'));
@@ -1016,6 +1050,28 @@
       r.addEventListener('click', function () { addVersion('Avant retour en arrière'); data = fix(JSON.parse(JSON.stringify(o.data))); save(); $('versDlg').close(); render(); toast('Version du ' + fmtTs(o.ts) + ' rétablie.'); });
       c.appendChild(t); c.appendChild(r); box.appendChild(c);
     });
+    var u = syncUrl();
+    if (u) {
+      var h = el('h3', '', 'Sur ton Drive'); h.style.cssText = 'margin:14px 0 6px;color:var(--bord);font-size:.95rem'; box.appendChild(h);
+      var st = el('p', 'muted', 'Chargement…'); box.appendChild(st);
+      fetch(u + (u.indexOf('?') < 0 ? '?' : '&') + 'liste=1&t=' + Date.now()).then(function (r) { return r.json(); }).then(function (l) {
+        if (!Array.isArray(l)) throw new Error('x');
+        if (!l.length) { st.textContent = 'Aucune sauvegarde sur le Drive pour l’instant (la première se crée à la prochaine synchronisation).'; return; }
+        st.remove();
+        l.forEach(function (o) {
+          var c = el('div', 'card'), t = el('div'); t.appendChild(el('b', '', fmtTs(o.ts))); t.appendChild(el('div', 'muted', 'Sauvegarde du Drive'));
+          var r = el('button', 'plain', 'Revenir à cette version'); r.type = 'button'; r.style.marginTop = '8px';
+          r.addEventListener('click', function () {
+            r.textContent = 'Chargement…';
+            fetch(u + (u.indexOf('?') < 0 ? '?' : '&') + 'version=' + encodeURIComponent(o.id) + '&t=' + Date.now()).then(function (x) { return x.json(); }).then(function (j) {
+              if (!j || !j.data) throw new Error('x');
+              addVersion('Avant retour à une version du Drive'); data = fix(j.data); save(); $('versDlg').close(); render(); toast('Version du Drive du ' + fmtTs(o.ts) + ' rétablie.');
+            }).catch(function () { r.textContent = 'Revenir à cette version'; toast('Impossible de charger cette version.'); });
+          });
+          c.appendChild(t); c.appendChild(r); box.appendChild(c);
+        });
+      }).catch(function () { st.textContent = 'Pas de réponse du Drive. Si tu viens de changer le script, vérifie qu’il est bien en version 2 (voir les étapes).'; });
+    }
     $('menu').close(); $('versDlg').showModal();
   }
   function importSheetFile(f) {
@@ -1131,7 +1187,7 @@
   document.querySelectorAll('#tabs button').forEach(function (b) { b.addEventListener('click', function () { try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { /* sans vibration */ } view = b.dataset.view; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } shown = 120; window._top = 1; render(); window.scrollTo(0, 0); }); });
   $('addBtn').addEventListener('click', function () { openEditor(null); });
   $('search').addEventListener('input', function () { shown = 120; renderExos(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 122'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 125'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
   $('syncUrlBtn').addEventListener('click', function () { $('menu').close(); syncNow(true); });
