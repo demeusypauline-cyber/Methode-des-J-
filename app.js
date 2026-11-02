@@ -166,7 +166,6 @@
     if (o.ex) p.appendChild(el('span', 'pill', 'mode examen · J-' + (examNum(x.semestre, x.matiere) - TODAY())));
     p.appendChild(el('span', 'pill', mins(x) + ' min'));
     c.appendChild(p);
-    if (x.note) c.appendChild(el('div', 'xnote', x.note));
     c.addEventListener('click', function (e) { if (e.target.tagName !== 'BUTTON') openEditor(x.id); });
     return c;
   }
@@ -481,9 +480,9 @@
         var es = L.filter(function (x) { return x.semestre === m.semestre && x.matiere === m.nom; }), av = es.length ? es.reduce(function (a, x) { return a + lvl(x); }, 0) / es.length : null;
         var row = el('div', 'exr'), mid = el('div', 'exm');
         var top = el('div', 'ext'); top.appendChild(el('span', 'chip', m.semestre)); top.appendChild(el('b', 'mn', m.nom)); mid.appendChild(top);
-        var trk = el('div', 'trk'), fl = el('i', 'fl'); fl.style.width = Math.min(100, need / 5 * 100) + '%'; trk.appendChild(fl);
+        var trk = el('div', 'trk'), fl = el('i', 'fl'); fl.style.width = Math.min(100, (av || 0) / 5 * 100) + '%'; if (av !== null) fl.style.background = scale(av); trk.appendChild(fl);
         for (var q = 1; q < 5; q++) { var tk = el('b', 'tk'); tk.style.left = (q * 20) + '%'; trk.appendChild(tk); }
-        if (av !== null) { var me = el('u', 'me'); me.style.left = Math.min(100, av / 5 * 100) + '%'; trk.appendChild(me); }
+        var me = el('u', 'me'); me.style.left = Math.min(100, need / 5 * 100) + '%'; me.title = 'Prévision : niveau à avoir aujourd’hui (' + need + ')'; trk.appendChild(me);
         mid.appendChild(trk); row.appendChild(mid);
         var jd = el('div', 'exj'); jd.appendChild(el('b', 'jj', 'J-' + J)); jd.appendChild(el('span', 'dd', fromNum(dn).slice(0, 6) + fromNum(dn).slice(8))); row.appendChild(jd);
         var nt = el('div', 'exn'); if (av !== null) nt.appendChild(nivBadge(av, 'sm')); row.appendChild(nt);
@@ -982,6 +981,30 @@
     Object.keys(seen).forEach(function (k) { if (!ex[k]) out.mats.push({ semestre: seen[k][0], nom: seen[k][1], examen: null }); });
     return out;
   }
+  /* ---------- anciennes versions : on garde les 10 dernières ---------- */
+  var VKEY = 'mes-exercices-versions', VMAX = 10;
+  function versions() { try { var v = JSON.parse(localStorage.getItem(VKEY) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+  function addVersion(label) {
+    if (!data || !data.ex || !data.ex.length) return;
+    var v = versions(), js = JSON.stringify(data);
+    if (v.length && JSON.stringify(v[0].data) === js) return;
+    v.unshift({ ts: Date.now(), label: label, data: JSON.parse(js) }); v = v.slice(0, VMAX);
+    while (v.length) { try { localStorage.setItem(VKEY, JSON.stringify(v)); break; } catch (e) { v.pop(); } }
+    versLabel();
+  }
+  function versLabel() { var b = $('versBtn'); if (b) b.textContent = 'Restaurer une ancienne sauvegarde (' + versions().length + ')'; }
+  function fmtTs(t) { var d = new Date(t); return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) + ' à ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); }
+  function openVersions() {
+    var box = $('versList'); box.textContent = ''; var v = versions();
+    if (!v.length) box.appendChild(el('p', 'muted', 'Pas encore d’ancienne version. Elles se créent avant chaque import, chaque restauration, chaque mise à jour depuis le Drive, et une fois par jour.'));
+    v.forEach(function (o) {
+      var c = el('div', 'card'), t = el('div'); t.appendChild(el('b', '', fmtTs(o.ts))); t.appendChild(el('div', 'muted', o.label + ' · ' + o.data.ex.length + ' exercices'));
+      var r = el('button', 'plain', 'Revenir à cette version'); r.type = 'button'; r.style.marginTop = '8px';
+      r.addEventListener('click', function () { addVersion('Avant retour en arrière'); data = fix(JSON.parse(JSON.stringify(o.data))); save(); $('versDlg').close(); render(); toast('Version du ' + fmtTs(o.ts) + ' rétablie.'); });
+      c.appendChild(t); c.appendChild(r); box.appendChild(c);
+    });
+    $('menu').close(); $('versDlg').showModal();
+  }
   function importSheetFile(f) {
     var isCsv = /\.csv$/i.test(f.name), r = new FileReader();
     r.onerror = function () { toast('Impossible de lire ce fichier.'); };
@@ -990,7 +1013,7 @@
       p.then(importSheets).then(function (out) {
         if (!out.ex.length) { toast('Aucun exercice trouvé : il faut les colonnes Succès, Semestre, Matière et Evalué le.'); return; }
         if (data.ex.length && !window.confirm('Remplacer les ' + data.ex.length + ' exercices actuels par les ' + out.ex.length + ' du tableur ?')) return;
-        data = fix(out); save(); view = 'today'; render(); toast(out.ex.length + ' exercices importés.');
+        addVersion('Avant import Excel'); data = fix(out); save(); view = 'today'; render(); toast(out.ex.length + ' exercices importés. (Menu ⋮ : Anciennes versions pour revenir en arrière)');
       }).catch(function () { toast('Ce fichier n’a pas le bon format (onglet « Table exercice » attendu).'); });
     };
     r.readAsArrayBuffer(f);
@@ -1004,7 +1027,7 @@
   }
   function importBackup(f) {
     var r = new FileReader();
-    r.onload = function () { try { data = fix(JSON.parse(r.result)); save(); render(); toast('Sauvegarde restaurée (' + data.ex.length + ' exercices).'); } catch (e) { toast('Ce fichier n’est pas une sauvegarde valide.'); } };
+    r.onload = function () { try { var nd = fix(JSON.parse(r.result)); addVersion('Avant restauration'); data = nd; save(); render(); toast('Sauvegarde restaurée (' + data.ex.length + ' exercices). (Menu ⋮ : Anciennes versions pour revenir en arrière)'); } catch (e) { toast('Ce fichier n’est pas une sauvegarde valide.'); } };
     r.readAsText(f);
   }
   var SYNC_KEY = 'mes-exercices-synchro-adresse';
@@ -1047,11 +1070,11 @@
       var rUpd = Number(remote && remote.updated || 0), lastSync = Number(localStorage.getItem(KEY + '-sync') || 0);
       function post(upd) { return fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ updated: upd, data: data }) }).then(function (r) { return r.json(); }).then(function () { try { localStorage.setItem(KEY + '-sync', String(upd)); } catch (e) { /* ignoré */ } }); }
       if (remote && remote.data && rUpd > lastSync && localUpd > lastSync && rUpd !== localUpd) {
-        var now = Date.now(); data = fix(mergeData(data, remote.data, localUpd >= rUpd));
+        addVersion('Avant fusion avec le Drive'); var now = Date.now(); data = fix(mergeData(data, remote.data, localUpd >= rUpd));
         try { localStorage.setItem(KEY, JSON.stringify(data)); localStorage.setItem(KEY + '-modif', String(now)); } catch (e) { /* ignoré */ }
         render(); return post(now).then(function () { toast('Fusionné avec ton Drive : rien n’a été perdu.'); });
       } else if (remote && remote.data && rUpd > localUpd) {
-        data = fix(remote.data); try { localStorage.setItem(KEY, JSON.stringify(data)); localStorage.setItem(KEY + '-modif', String(rUpd)); localStorage.setItem(KEY + '-sync', String(rUpd)); } catch (e) { /* ignoré */ }
+        addVersion('Avant mise à jour depuis le Drive'); data = fix(remote.data); try { localStorage.setItem(KEY, JSON.stringify(data)); localStorage.setItem(KEY + '-modif', String(rUpd)); localStorage.setItem(KEY + '-sync', String(rUpd)); } catch (e) { /* ignoré */ }
         render(); toast('Exercices mis à jour depuis ton Drive.');
       } else if (localUpd > rUpd) {
         return post(localUpd).then(function () { if (!silent) toast('Exercices envoyés vers ton Drive.'); });
@@ -1095,15 +1118,27 @@
   document.querySelectorAll('#tabs button').forEach(function (b) { b.addEventListener('click', function () { try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { /* sans vibration */ } view = b.dataset.view; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } shown = 120; window._top = 1; render(); window.scrollTo(0, 0); }); });
   $('addBtn').addEventListener('click', function () { openEditor(null); });
   $('search').addEventListener('input', function () { shown = 120; renderExos(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 110'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 116'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
   $('syncUrlBtn').addEventListener('click', function () { $('menu').close(); syncNow(true); });
   $('exportBtn').addEventListener('click', function () { $('menu').close(); exportFile(); });
+  $('versBtn').addEventListener('click', openVersions);
+  $('versFile').addEventListener('click', function () { $('versDlg').close(); $('sheetInput').click(); });
+  $('versClose').addEventListener('click', function () { $('versDlg').close(); });
+  $('menuBtn').addEventListener('click', versLabel);
+  (function () { var v = versions(); if (!v.length || new Date(v[0].ts).toDateString() !== new Date().toDateString()) addVersion('Automatique (début de journée)'); })();
+  /* bouton Retour d'Android : ferme la fenêtre ouverte, puis revient à À faire, au lieu de quitter l'appli */
+  try {
+    history.pushState({ a: 1 }, '');
+    window.addEventListener('popstate', function () {
+      var open = document.querySelector('dialog[open]');
+      if (open) { open.close(); history.pushState({ a: 1 }, ''); return; }
+      if (view !== 'today') { view = 'today'; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } window._top = 1; render(); window.scrollTo(0, 0); history.pushState({ a: 1 }, ''); }
+    });
+  } catch (e) { /* ignoré */ }
   $('importSheet').addEventListener('click', function () { $('sheetInput').click(); });
-  $('sheetInput').addEventListener('change', function (e) { var f = e.target.files[0]; if (f) { $('menu').close(); importSheetFile(f); } e.target.value = ''; });
-  $('importFile').addEventListener('click', function () { $('fileInput').click(); });
-  $('fileInput').addEventListener('change', function (e) { var f = e.target.files[0]; if (f) { $('menu').close(); importBackup(f); } e.target.value = ''; });
+  $('sheetInput').addEventListener('change', function (e) { var f = e.target.files[0]; if (f) { $('menu').close(); if (/\.json$/i.test(f.name)) importBackup(f); else importSheetFile(f); } e.target.value = ''; });
   $('form').addEventListener('submit', saveEditor);
   $('fSem').addEventListener('change', function () { fillMat(); });
   $('cancelBtn').addEventListener('click', function () { $('editor').close(); });

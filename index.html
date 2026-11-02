@@ -42,16 +42,16 @@
 <div id="toast" role="status"></div>
 
 <dialog id="menu">
-  <h2>Menu</h2>
-  <button id="syncBtn" class="row">Synchroniser avec mon Drive</button>
-  <button id="syncUrlBtn" class="row plain">Changer l’adresse de synchronisation</button>
-  <button id="importSheet" class="row">Importer mon tableur (Excel .xlsx ou CSV)</button>
-  <input id="sheetInput" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+  <div class="mhead"><h2>Menu</h2><button id="closeMenu" class="xbtn" type="button" aria-label="Fermer"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="syncrow">
+    <button id="syncBtn" class="row">Synchroniser avec mon Drive</button>
+    <button id="syncUrlBtn" class="pen" type="button" title="Changer l’adresse de synchronisation" aria-label="Changer l’adresse de synchronisation"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+  </div>
+  <button id="importSheet" class="row">Importer un fichier<small style="display:block;font-size:.66rem;opacity:.75">Tableur (Excel, CSV) ou sauvegarde (.json)</small></button>
+  <input id="sheetInput" type="file" accept=".xlsx,.csv,.json,text/csv,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
   <button id="exportBtn" class="row">Exporter mes données (format .json)</button>
-  <button id="importFile" class="row">Restaurer depuis un fichier</button>
-  <input id="fileInput" type="file" accept="application/json,.json" hidden>
+  <button id="versBtn" class="row">Restaurer une ancienne sauvegarde</button>
   <p id="ver" style="text-align:center;font-size:.7rem;color:var(--muted);margin:6px 0 0"></p>
-  <button id="closeMenu" class="row plain">Fermer</button>
 </dialog>
 
 <dialog id="editor">
@@ -81,6 +81,14 @@
   <label class="doneT">Temps passé (min) <input id="doneMin" type="number" inputmode="numeric" min="1" max="999"></label>
   <div id="doneBtns" class="levels"></div>
   <button id="doneCancel" class="row plain">Annuler</button>
+</dialog>
+
+<dialog id="versDlg">
+  <h2>Restaurer une ancienne sauvegarde</h2>
+  <p class="muted" style="margin:0 0 8px">Choisis la version selon sa date et son heure. Les 10 dernières sont gardées sur cet appareil.</p>
+  <div id="versList" style="max-height:60vh;overflow:auto"></div>
+  <button id="versFile" class="row">Importer un fichier…</button>
+  <button id="versClose" class="row plain">Fermer</button>
 </dialog>
 
 <script src="app.js"></script>
