@@ -187,12 +187,12 @@
     var top = el('div', 'row2');
     var lx = lvl(x), nb = el('div', 'niv', String(lx)); nb.style.background = scale(lx); nb.style.color = lx < 3.2 ? '#fff' : '#5c1530'; nb.title = nivName(lx);
     var l = el('div'); l.style.flex = '1'; l.appendChild(el('b', '', x.matiere + (x.intitule ? ' · ' + x.intitule : '')));
-    l.appendChild(el('div', 'muted', x.semestre + ' · fait le ' + fromNum(dnum(x.evalue)) + ' · ' + nivName(lx)));
+    l.appendChild(el('div', 'muted', x.semestre + ' · fait le ' + fromNum(dnum(x.evalue))));
     top.appendChild(nb); top.appendChild(l);
     c.appendChild(top);
     var p = el('div'); p.style.marginTop = '6px';
     var late = Math.floor(TODAY() - o.r);
-    if (late > 0) p.appendChild(el('span', 'pill late', 'en retard de ' + late + ' j'));
+    if (late > 0) p.appendChild(el('span', 'pill late', 'retard ' + late + ' j'));
     else p.appendChild(pillI('cal', 'à revoir ' + fromNum(o.r)));
     if (o.ex) p.appendChild(pillI('flag', 'examen · J-' + (examNum(x.semestre, x.matiere) - TODAY())));
     p.appendChild(pillI('clock', mins(x) + ' min'));
@@ -212,7 +212,7 @@
     var P = plan(), d = new Date();
     var head = el('div', 'card');
     var tot = 0; P.list.forEach(function (o) { if (o.in) tot += mins(o.x); });
-    var jt = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); head.appendChild(el('h2', '', 'Aujourd’hui · ' + jt.charAt(0).toUpperCase() + jt.slice(1)));
+    var jt = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); head.appendChild(el('h2', '', 'Aujourd’hui'));
     var bud = P.budget >= 1e9 ? 'sans limite (max ' + (minutesRestantes() / 60) + ' h jusqu’à demain)' : P.budget + ' min';
     function hm(m) { m = Math.round(m); return Math.floor(m / 60) + 'h' + ('0' + (m % 60)).slice(-2); }
     var hr = minutesRestantes() / 60;
@@ -1212,7 +1212,7 @@
   $('filtBtn').addEventListener('click', function () { $('filtDlg').showModal(); });
   $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
   $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 160'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 161'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
   $('syncUrlBtn').addEventListener('click', function () { $('menu').close(); syncNow(true); });

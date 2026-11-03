@@ -417,3 +417,7 @@ header .icon,#menuBtn,#filtBtn{border:1.5px solid var(--rose2)!important;backgro
 /* lignes examens et matières plus serrées */
 .mlist .mrow,.exr{padding:8px 12px!important;margin:0 0 6px!important}
 .mlist{gap:0}
+
+/* pastilles sur une seule ligne */
+.card .pills,.card .row2 + div{display:flex;flex-wrap:nowrap;gap:5px;align-items:center;overflow:hidden}
+.card .row2 + div .pill{flex:none;white-space:nowrap;margin:0;padding:2px 8px;font-size:.68rem}
