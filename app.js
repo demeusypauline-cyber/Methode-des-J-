@@ -97,6 +97,8 @@
     var d = new Date(), v = data.reglages.planning[(d.getDay() + 6) % 7];
     return typeof v === 'number' && !isNaN(v) ? v : 1e9;
   }
+  /* sans limite : aujourd'hui on ne peut pas dépasser les heures restantes jusqu'à demain, arrondies à l'heure supérieure */
+  function minutesRestantes() { var n = new Date(), m = (24 * 60) - (n.getHours() * 60 + n.getMinutes()); return Math.max(60, Math.ceil(m / 60) * 60); }
   function dejaFait() {
     var t = todayISO(), s = 0;
     data.ex.forEach(function (x) { if (x.evalue === t && visible(x)) s += mins(x); });
@@ -114,11 +116,11 @@
       var kb = (b.ex ? 0 : 1) * 1e11 + b.r * 1e5 + lvl(b.x) * 1e4 + b.i;
       return ka - kb;
     });
-    var budget = budgetDuJour(), fait = dejaFait(), cum = 0;
+    var budget = budgetDuJour(), fait = dejaFait(), cum = 0, eff = budget, ef = fait; if (budget >= 1e9) { eff = minutesRestantes(); ef = 0; }
     list.forEach(function (o) {
       var m = mins(o.x);
       if (o.x.reporte === todayISO()) { o.rep = true; o.in = false; return; } /* reporté par toi : ne prend pas de temps aujourd'hui */
-      o.in = (budget >= 1e9) || cum + m <= budget - fait || (cum === 0 && budget > fait);
+      o.in = cum + m <= eff - ef || (cum === 0 && eff > ef);
       if (o.in) cum += m; /* un exo qui ne rentre pas est reporté ; un plus court peut prendre sa place */
     });
     return { list: list, budget: budget, fait: fait };
@@ -211,8 +213,10 @@
     var head = el('div', 'card');
     var tot = 0; P.list.forEach(function (o) { if (o.in) tot += mins(o.x); });
     var jt = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); head.appendChild(el('h2', '', 'Aujourd’hui · ' + jt.charAt(0).toUpperCase() + jt.slice(1)));
-    var bud = P.budget >= 1e9 ? 'sans limite' : P.budget + ' min';
-    head.appendChild(el('div', 'muted', 'Budget du jour : ' + bud + ' · déjà fait : ' + P.fait + ' min · prévu : ' + tot + ' min'));
+    var bud = P.budget >= 1e9 ? 'sans limite (max ' + (minutesRestantes() / 60) + ' h jusqu’à demain)' : P.budget + ' min';
+    function hm(m) { m = Math.round(m); return Math.floor(m / 60) + 'h' + ('0' + (m % 60)).slice(-2); }
+    var hr = minutesRestantes() / 60;
+    head.appendChild(el('div', 'muted', (P.budget >= 1e9 ? 'Il reste ' + hr + ' heure' + (hr > 1 ? 's' : '') : 'Budget du jour : ' + hm(P.budget)) + ' · déjà fait : ' + hm(P.fait) + ' · prévu : ' + hm(tot)));
     var bar = el('div', 'bar'), fill = el('i'); fill.style.width = (P.budget >= 1e9 ? 0 : Math.min(100, Math.round(P.fait / P.budget * 100))) + '%'; bar.appendChild(fill); head.appendChild(bar);
     box.appendChild(head);
     var inP = P.list.filter(function (o) { return o.in; }), out = P.list.filter(function (o) { return !o.in && !o.rep; }), reps = P.list.filter(function (o) { return o.rep; });
@@ -449,6 +453,8 @@
     var tt = el('div', 'dht'); tt.appendChild(el('b', '', 'Mes révisions')); tt.appendChild(el('small', '', 'Méthode des J · suivi de mes exercices'));
     var dtxt = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); var dd0 = el('span', 'dhd', dtxt.charAt(0).toUpperCase() + dtxt.slice(1));
     var hdr = document.querySelector('header'); Array.prototype.slice.call(hdr.querySelectorAll('.hh')).forEach(function (n) { n.remove(); }); hdr.insertBefore(hh, hdr.firstChild); dh.appendChild(dd0); box.appendChild(dh);
+    function fitDate() { dd0.style.fontSize = ''; var sz = parseFloat(getComputedStyle(dd0).fontSize), g = 0; while (dd0.scrollWidth > dd0.clientWidth + 1 && sz > 14 && g++ < 60) { sz -= 1; dd0.style.fontSize = sz + 'px'; } }
+    setTimeout(fitDate, 0); if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitDate); window.onresize = fitDate;
     var ban = el('div', 'banner');
     ban.textContent = todo + ' exercice' + (todo > 1 ? 's' : '') + ' à réviser aujourd’hui';
     if (fut.length) { var dd = dnum(fut[0].examen) - t; ban.textContent = todo + ' exercice' + (todo > 1 ? 's' : '') + ' à réviser aujourd’hui  ·  Prochain examen : ' + fut[0].nom + ' ' + (dd === 0 ? 'aujourd’hui' : 'dans ' + dd + ' jour' + (dd > 1 ? 's' : '')); }
@@ -457,8 +463,8 @@
     var sv = semestres().filter(function (z) { return !data.reglages.semestres.length || data.reglages.semestres.indexOf(z) >= 0; }).map(semAvg).filter(function (v) { return v !== null; });
     var moy = sv.length ? sv.reduce(function (a, b) { return a + b; }, 0) / sv.length : null;
     var k = el('div', 'kpis3');
-    [['EXERCICES', L.length, 'enregistrés'], ['À FAIRE AUJOURD’HUI', todo, 'dont ' + late + ' en retard'], ['MOYENNE /20', moy === null ? '–' : fmt1(moy), 'd’après tes relevés']].forEach(function (a, i) {
-      var d = el('div', 'kpi3'); d.appendChild(el('small', '', a[0])); d.appendChild(el('b', '', a[1])); d.appendChild(el('span', '', a[2])); d.appendChild(el('u', i === 1 ? 'mid' : '')); k.appendChild(d);
+    [['EXERCICES', L.length, 'enregistrés'], ['AUJOURD’HUI', todo, ''], ['MOYENNE /20', moy === null ? '–' : fmt1(moy), '']].forEach(function (a, i) {
+      var d = el('div', 'kpi3'); d.appendChild(el('small', '', a[0])); d.appendChild(el('b', '', a[1])); if (a[2]) d.appendChild(el('span', '', a[2])); d.appendChild(el('u', i === 1 ? 'mid' : '')); k.appendChild(d);
     });
     box.appendChild(k);
 
@@ -766,7 +772,8 @@
       cand.forEach(function (o) {
         if (done[o.i] || o.r >= t + d + 1) return;
         if (d === 0 && o.x && o.x.reporte === todayISO()) return;
-        if (bud >= 1e9 || cum + o.m <= bud - fait || (cum === 0 && bud > fait)) {
+        var effB = bud, effF = fait; if (bud >= 1e9 && d === 0) { effB = minutesRestantes(); effF = 0; }
+        if (effB >= 1e9 || cum + o.m <= effB - effF || (cum === 0 && effB > effF)) {
           cum += o.m;
           done[o.i] = 1; if (!o.v) cnt[d]++;
           if (RET) {
@@ -1205,7 +1212,7 @@
   $('filtBtn').addEventListener('click', function () { $('filtDlg').showModal(); });
   $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
   $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 151'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 160'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
   $('syncUrlBtn').addEventListener('click', function () { $('menu').close(); syncNow(true); });

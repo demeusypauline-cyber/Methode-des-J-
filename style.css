@@ -406,3 +406,14 @@ header .hh{position:relative;width:44px;height:40px;flex:none;margin:0}
 .dhead .dhd{font-size:2.3rem}
 .dhead{justify-content:center}
 .dhead .dhd{text-align:center!important;flex:1}
+
+/* boutons du haut identiques au crayon, date sur une ligne */
+#filtBtn .fdot{display:none!important}
+header .icon,#menuBtn,#filtBtn{border:1.5px solid var(--rose2)!important;background:#fff!important;color:var(--bord)!important;border-radius:50%;width:38px;height:38px;box-shadow:0 5px 12px #ad145730;padding:0}
+.dhead .dhd{white-space:nowrap;overflow:hidden;font-size:2.3rem}
+
+.hleg{display:none!important}
+
+/* lignes examens et matières plus serrées */
+.mlist .mrow,.exr{padding:8px 12px!important;margin:0 0 6px!important}
+.mlist{gap:0}
