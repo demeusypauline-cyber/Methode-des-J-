@@ -137,8 +137,10 @@
     var t = l[i]; l[i] = l[j]; l[j] = t; data.reglages.semOrdre = l; data.reglages.ordreSem = 'manuel'; save(); render();
   }
   function renderFilters() {
-    var box = $('filters'); box.textContent = ''; if (view === 'set') return;
-    var all = semestres(); if (all.length < 2) return;
+    if (view !== 'dash') Array.prototype.slice.call(document.querySelectorAll('.hbtns .editbtn, header .hh')).forEach(function (n) { n.remove(); });
+    var box = $('filtBox'); box.textContent = ''; var fb = $('filtBtn'), all = semestres();
+    fb.hidden = (view === 'set' || all.length < 2); fb.querySelector('.fdot').hidden = !data.reglages.semestres.length;
+    if (view === 'set' || all.length < 2) return;
     all.forEach(function (s) {
       var b = el('button', 'chip', s); b.type = 'button';
       b.setAttribute('aria-pressed', data.reglages.semestres.indexOf(s) >= 0 ? 'true' : 'false');
@@ -445,8 +447,8 @@
     var fut = matsV.filter(function (m) { return m.examen && dnum(m.examen) >= t; }).sort(function (a, b) { return dnum(a.examen) - dnum(b.examen); });
     var dh = el('div', 'dhead'), hh = el('span', 'hh'); hh.innerHTML = '<svg viewBox="0 0 24 22" width="34" height="31" style="position:absolute;left:0;top:0"><path fill="#f08ab0" d="M12 21.5C5 15.8 1 12.2 1 7.6 1 4.4 3.5 2 6.6 2c2 0 3.9 1 5.4 3C13.5 3 15.4 2 17.4 2 20.5 2 23 4.4 23 7.6c0 4.6-4 8.2-11 13.9z"/></svg><svg viewBox="0 0 24 22" width="22" height="20" style="position:absolute;left:18px;top:16px"><path fill="#ad1457" d="M12 21.5C5 15.8 1 12.2 1 7.6 1 4.4 3.5 2 6.6 2c2 0 3.9 1 5.4 3C13.5 3 15.4 2 17.4 2 20.5 2 23 4.4 23 7.6c0 4.6-4 8.2-11 13.9z"/></svg>';
     var tt = el('div', 'dht'); tt.appendChild(el('b', '', 'Mes révisions')); tt.appendChild(el('small', '', 'Méthode des J · suivi de mes exercices'));
-    var dd0 = el('span', 'dhd', new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
-    dh.appendChild(hh); dh.appendChild(tt); dh.appendChild(dd0); box.appendChild(dh);
+    var dtxt = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); var dd0 = el('span', 'dhd', dtxt.charAt(0).toUpperCase() + dtxt.slice(1));
+    var hdr = document.querySelector('header'); Array.prototype.slice.call(hdr.querySelectorAll('.hh')).forEach(function (n) { n.remove(); }); hdr.insertBefore(hh, hdr.firstChild); dh.appendChild(dd0); box.appendChild(dh);
     var ban = el('div', 'banner');
     ban.textContent = todo + ' exercice' + (todo > 1 ? 's' : '') + ' à réviser aujourd’hui';
     if (fut.length) { var dd = dnum(fut[0].examen) - t; ban.textContent = todo + ' exercice' + (todo > 1 ? 's' : '') + ' à réviser aujourd’hui  ·  Prochain examen : ' + fut[0].nom + ' ' + (dd === 0 ? 'aujourd’hui' : 'dans ' + dd + ' jour' + (dd > 1 ? 's' : '')); }
@@ -558,9 +560,9 @@
     R.dashLarge = R.dashLarge || {}; keys.forEach(function (k) { if (R.dashLarge[k] !== undefined) cards[k].classList.toggle('wide', !!R.dashLarge[k]); });
     var ed = el('button', 'editbtn' + (dashEdit ? ' on' : '')); ed.type = 'button'; ed.setAttribute('aria-label', dashEdit ? 'Terminer' : 'Modifier l’affichage');
     ed.innerHTML = dashEdit ? '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>' : '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M14 7l3 3"/></svg>';
-    ed.addEventListener('click', function () { dashEdit = !dashEdit; renderDash(); }); dh.insertBefore(ed, dd0);
+    ed.addEventListener('click', function () { dashEdit = !dashEdit; renderDash(); }); Array.prototype.slice.call(document.querySelectorAll('.hbtns .editbtn')).forEach(function (n) { n.remove(); }); $('filtBtn').parentNode.insertBefore(ed, $('menuBtn'));
     box.classList.toggle('c1', R.dashCols !== 2);
-    if (dashEdit && window.innerWidth >= 760) { var sg = el('div', 'seg colseg'); [[1, '1 colonne'], [2, '2 colonnes']].forEach(function (o) { var bb = el('button', (R.dashCols === 2 ? 2 : 1) === o[0] ? 'on' : '', o[1]); bb.type = 'button'; bb.addEventListener('click', function () { R.dashCols = o[0]; save(); renderDash(); }); sg.appendChild(bb); }); dh.insertBefore(sg, ed); }
+    if (dashEdit && window.innerWidth >= 760) { var sg = el('div', 'seg colseg'); [[1, '1 colonne'], [2, '2 colonnes']].forEach(function (o) { var bb = el('button', (R.dashCols === 2 ? 2 : 1) === o[0] ? 'on' : '', o[1]); bb.type = 'button'; bb.addEventListener('click', function () { R.dashCols = o[0]; save(); renderDash(); }); sg.appendChild(bb); }); dh.appendChild(sg); }
     var half = 0, lastHalf = null;
     ord.forEach(function (k, i) {
       var isH = hid.indexOf(k) >= 0; if (isH && !dashEdit) return;
@@ -1200,7 +1202,10 @@
   document.querySelectorAll('#tabs button').forEach(function (b) { b.addEventListener('click', function () { try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { /* sans vibration */ } view = b.dataset.view; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } shown = 120; window._top = 1; render(); window.scrollTo(0, 0); }); });
   $('addBtn').addEventListener('click', function () { openEditor(null); });
   $('search').addEventListener('input', function () { shown = 120; renderExos(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 146'; syncLabel(); $('menu').showModal(); });
+  $('filtBtn').addEventListener('click', function () { $('filtDlg').showModal(); });
+  $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
+  $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; save(); render(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 151'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
   $('syncUrlBtn').addEventListener('click', function () { $('menu').close(); syncNow(true); });

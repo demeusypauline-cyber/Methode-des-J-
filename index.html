@@ -6,17 +6,17 @@
 <meta name="theme-color" content="#ad1457">
 <title>Mes exercices</title>
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icon-192.png">
-<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png?v=2">
+<link rel="apple-touch-icon" href="icon-192.png?v=2">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header>
   <h1>Mes exercices</h1>
-  <button id="menuBtn" class="icon" aria-label="Menu">⋮</button>
+  <div class="hbtns"><button id="filtBtn" class="icon" aria-label="Filtrer par semestre" hidden><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16l-6 7.5V19l-4-2v-4.5z"/></svg><i class="fdot" hidden></i></button><button id="menuBtn" class="icon" aria-label="Menu">⋮</button></div>
 </header>
 
-<div id="filters" class="chips" aria-label="Semestres"></div>
+<div id="filters" class="chips" aria-label="Semestres" hidden></div>
 
 <main>
   <section id="v-today"></section>
@@ -40,6 +40,12 @@
 </nav>
 
 <div id="toast" role="status"></div>
+
+<dialog id="filtDlg">
+  <div class="mhead"><h2>Filtrer par semestre</h2><button id="closeFilt" class="xbtn" type="button" aria-label="Fermer"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div id="filtBox" class="chips fbox"></div>
+  <button id="filtAll" class="row" type="button">Tout afficher</button>
+</dialog>
 
 <dialog id="menu">
   <div class="mhead"><h2>Menu</h2><button id="closeMenu" class="xbtn" type="button" aria-label="Fermer"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>

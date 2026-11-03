@@ -1,3 +1,4 @@
+@font-face{font-family:'Chancery';font-weight:400;font-style:normal;font-display:swap;src:url(fonts/chancery.woff) format('woff')}
 @font-face{font-family:'Poppins';font-weight:400;font-style:normal;font-display:swap;src:url(fonts/poppins-Regular.woff) format('woff')}
 @font-face{font-family:'Poppins';font-weight:500 600;font-style:normal;font-display:swap;src:url(fonts/poppins-Medium.woff) format('woff')}
 @font-face{font-family:'Poppins';font-weight:700 900;font-style:normal;font-display:swap;src:url(fonts/poppins-Bold.woff) format('woff')}
@@ -383,3 +384,25 @@ header .icon,#menuBtn{color:var(--bord)!important;background:#fff!important;bord
   .card:has(> .acts) > div:not(.row2):not(.acts){grid-column:1;grid-row:2}
   .card:has(> .acts) > .acts{grid-column:2;grid-row:1 / span 2;margin:0;flex-wrap:nowrap;justify-content:flex-end}
 }
+
+/* en-tête : filtre + menu, date en cursive */
+.hbtns{display:flex;gap:10px;align-items:center}
+#filtBtn{position:relative}
+#filtBtn[hidden]{display:none!important}
+#filtBtn .fdot{position:absolute;top:5px;right:5px;width:9px;height:9px;border-radius:50%;background:var(--bord);border:2px solid #fff}
+#filters{display:none!important}
+#filtDlg{width:min(92vw,420px)}
+.fbox{padding:6px 0 12px!important;max-width:none!important}
+.dhead{flex-wrap:nowrap;align-items:flex-start;gap:12px}
+.dhead .hh{margin-top:2px}
+.dhead .dhd{flex:1;flex-basis:auto!important;text-align:left!important;margin:0!important;font-family:'Chancery','Zapfino','Brush Script MT',cursive;font-weight:400;font-size:2.15rem;line-height:1.1;color:var(--bord);letter-spacing:.01em;padding-top:2px}
+.dhead .editbtn{flex:none;order:3}
+
+/* cœurs à gauche de l'en-tête, crayon à côté du filtre */
+header{justify-content:space-between!important;align-items:center}
+header .hh{position:relative;width:44px;height:40px;flex:none;margin:0}
+.hbtns .editbtn{margin:0!important;width:38px;height:38px;flex:none}
+.dhead{margin:0 0 8px}
+.dhead .dhd{font-size:2.3rem}
+.dhead{justify-content:center}
+.dhead .dhd{text-align:center!important;flex:1}
