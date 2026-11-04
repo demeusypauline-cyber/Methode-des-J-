@@ -1,1252 +1,839 @@
-(function () {
-  'use strict';
-  var KEY = 'mes-exercices-v1';
-  var DAY = 86400000;
-  var THEMES = [['Bordeaux', 0, '#ad1457'], ['Bleu', -125, '#1f4d7a'], ['Vert', 175, '#1f7a4d'], ['Violet', -70, '#5a1f7a']];
-  function themeDeg() { var n = ''; try { n = localStorage.getItem('mes-exercices-theme') || ''; } catch (e) { /* ignoré */ } var t = THEMES.filter(function (a) { return a[0] === n; })[0] || THEMES[0]; return t; }
-  function applyTheme() {
-    var t = themeDeg(); document.documentElement.style.filter = t[1] ? 'hue-rotate(' + t[1] + 'deg)' : '';
-    var m = document.querySelector('meta[name=theme-color]'); if (m) m.setAttribute('content', t[2]);
-  }
-  applyTheme();
-  var NIV = ['Échec total', 'Beaucoup d’erreurs', 'Compréhension partielle', 'Compréhension correcte', 'Presque parfait', 'Maîtrise totale'];
-  var JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-  var DEF = { intervalles: [2, 4, 10, 25, 35, 50, 70, 90, 110, 130, 150, 170], minutesDefaut: 5, debutExam: 50, seuilButoire: 15, butoireSi: 5, butoireSinon: 0, planning: [60, 60, 30, 180, 30, 180, 30], semestres: [], ordreSem: 'manuel', semOrdre: [], dashOrdre: [], dashCache: [], pasApres5: 20, oubliMin: 3 };
-  var data = { ex: [], mats: [], reglages: JSON.parse(JSON.stringify(DEF)) };
-  var view = (function () { try { if (!sessionStorage.getItem('mes-exercices-sess')) { sessionStorage.setItem('mes-exercices-sess', '1'); return 'dash'; } } catch (e) { /* ignoré */ } try { var v = localStorage.getItem('mes-exercices-onglet'); return ['dash', 'today', 'exos', 'mats', 'set'].indexOf(v) >= 0 ? v : 'today'; } catch (e) { return 'today'; } })(), editingId = null, doingId = null, shown = 120;
+(function(){
+"use strict";
+/* ---------- utilitaires ---------- */
+const $=(s,e)=>(e||document).querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const nf0=new Intl.NumberFormat('fr-FR',{maximumFractionDigits:0});
+const nf2=new Intl.NumberFormat('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const nf3=new Intl.NumberFormat('fr-FR',{maximumFractionDigits:3});
+const eur=n=>nf2.format(n||0)+' €';
+const eur0=n=>nf0.format(Math.round(n||0))+' €';
+const num=v=>(v===null||v===undefined||v===''||isNaN(Number(v)))?0:Number(v);
+const isNum=v=>v!==null&&v!==undefined&&v!==''&&!isNaN(Number(v));
+const dnum=s=>{if(!s)return null;const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s);return m?Date.UTC(+m[1],+m[2]-1,+m[3])/864e5:null};
+const dstr=n=>new Date(n*864e5).toISOString().slice(0,10);
+const now=new Date();const TODAY=Date.UTC(now.getFullYear(),now.getMonth(),now.getDate())/864e5;
+const fdate=n=>{const d=new Date(n*864e5);return d.toLocaleDateString('fr-FR',{timeZone:'UTC'})};
+const MOIS=['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
+const lsGet=k=>{try{return localStorage.getItem(k)}catch(e){return null}};
+const lsSet=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};
+const sGet=k=>{try{return localStorage.getItem(k)||''}catch(e){return ''}};
+const sSet=(k,v)=>{try{v?localStorage.setItem(k,v):localStorage.removeItem(k)}catch(e){}};
+const CONN=()=>({url:lsGet('suivi.url')||'',pass:sGet('suivi.pw')});
+const UNLOCKED=()=>!!(lsGet('suivi.h')&&sGet('suivi.pw'));
+async function sha(t){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('suivi:'+t));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
 
-  function $(id) { return document.getElementById(id); }
-  function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt !== undefined) e.textContent = txt; return e; }
-  function toast(m) { var t = $('toast'); t.textContent = m; t.className = 'on'; clearTimeout(toast.t); toast.t = setTimeout(function () { t.className = ''; }, 2800); }
-  var IC = {
-    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-    cal: '<rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/>',
-    flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>'
-  };
-  function ico(n) { var i = document.createElement('i'); i.className = 'ic'; i.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + IC[n] + '</svg>'; return i; }
-  function pillI(n, txt, cls) { var p = el('span', cls || 'pill'); p.appendChild(ico(n)); p.appendChild(document.createTextNode(txt)); return p; }
-  function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
-  function norm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+/* ---------- configuration par défaut (réglages, pas de données) ---------- */
+const DEFAULT_CFG={
+ statuts:['Faisabilité','Devis envoyé','Devis signé','Convention envoyée','Convention signée','Convention étudiant avant réalisation','En réalisation','Archivée','Refusé / sans suite'],
+ factures:['Sans acompte','Acompte à facturer','Acompte facturé','Acompte encaissé','Intermédiaire encaissé','Solde à facturer','Solde facturé','Solde encaissé'],
+ mandats:[],
+ relance1:3,relance2:10,tva:0.2,smic:12.02,
+ cot:{maladie:0.013,retraiteP:0.069,retraiteD:0.004,csgD:0.068,csgND:0.029},
+ patr:{maladie:0.13,at:0.0123,retraiteP:0.0855,retraiteD:0.0211,famille:0.0525,autres:0},
+ chomage:0,
+ cnje:{date:'',min:80,max:450,maxInt:300}
+};
+const COT_LAB={maladie:'maladie',retraiteP:'retraite plafonnée',retraiteD:'retraite déplafonnée',csgD:'CSG déductible',csgND:'CSG/CRDS non déductible'};
+const PATR_LAB={maladie:'maladie',at:'accidents du travail',retraiteP:'retraite plafonnée',retraiteD:'retraite déplafonnée',famille:'famille',autres:'autres'};
+const IN_PROGRESS=['Faisabilité','Devis envoyé','Devis signé','Convention envoyée','Convention signée','Convention étudiant avant réalisation','En réalisation'];
+const SIGNED=['Devis signé','Convention signée','Convention étudiant avant réalisation','En réalisation','Archivée'];
+const L_STAT=['Convention signée','Convention étudiant avant réalisation','En réalisation','Archivée'];
+const INVOICED=['Acompte facturé','Facture intermédiaire','Solde facturé'];
+const BV_STAT=['Pas payé','Payé','A venir','Non effectué'];
 
-  /* ---------- dates (jours entiers, sans décalage d'heure) ---------- */
-  function dnum(s) { var p = String(s).split('-'); return Date.UTC(+p[0], +p[1] - 1, +p[2]) / DAY; }
-  function todayISO() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
-  function fromNum(n) { var d = new Date(Math.floor(n) * DAY); return ('0' + d.getUTCDate()).slice(-2) + '/' + ('0' + (d.getUTCMonth() + 1)).slice(-2) + '/' + d.getUTCFullYear(); }
-  function TODAY() { return dnum(todayISO()); }
+/* ---------- état ---------- */
+const S={etudes:{},factures:{},temps:{},formation:{},cfg:null};
+let loaded={etudes:false,factures:false,temps:false,formation:false,cfg:false};
+let db=null,userCap=null,canWrite=true,tab=lsGet('suivi.tab')||'dash',mandatSel=lsGet('suivi.mandat')||'Tous les mandats';
+let dirty=false,pendingRender=false,timeoutNote=false,dbErr='';
+const cfg=()=>{const c=S.cfg||{};const d=DEFAULT_CFG;return Object.assign({},d,c,{cot:Object.assign({},d.cot,c.cot),patr:Object.assign({},d.patr,c.patr),cnje:Object.assign({},d.cnje,c.cnje)})};
+const sorted=col=>Object.keys(S[col]).map(id=>Object.assign({id},S[col][id])).sort((a,b)=>(a.ord||0)-(b.ord||0));
 
-  /* ---------- données ---------- */
-  function fix(d) {
-    d = d && typeof d === 'object' ? d : {};
-    var r = Object.assign({}, JSON.parse(JSON.stringify(DEF)), d.reglages || {});
-    for (var i = 0; i < 12; i++) if (typeof r.intervalles[i] !== 'number') r.intervalles[i] = DEF.intervalles[i];
-    if (Array.isArray(d.ex)) d.ex.forEach(function (x) {
-      if (x.succes > 5) { var r = runOf(x.id, d.hist); x.p5 = Math.max(0, x.succes - 4 - r.run); x.succes = 5; }
-    });
-    return { ex: Array.isArray(d.ex) ? d.ex : [], mats: Array.isArray(d.mats) ? d.mats : [], hist: Array.isArray(d.hist) ? d.hist : [], jours: d.jours && typeof d.jours === 'object' ? d.jours : {}, ues: Array.isArray(d.ues) ? d.ues : [], corbeille: Array.isArray(d.corbeille) ? d.corbeille : [], reglages: r };
-  }
-  function load() { try { var raw = localStorage.getItem(KEY); if (raw) data = fix(JSON.parse(raw)); } catch (e) { /* départ à vide */ } }
-  function save() {
-    try { localStorage.setItem(KEY, JSON.stringify(data)); localStorage.setItem(KEY + '-modif', String(Date.now())); syncSoon(); return true; }
-    catch (e) { toast('Impossible d’enregistrer (stockage plein ou bloqué).'); return false; }
-  }
+/* ---------- persistance ---------- */
+const queue={};
+function save(path,obj){
+  if(!db)return;
+  queue[path]=(queue[path]||Promise.resolve()).then(()=>db.doc(path).set(obj)).catch(e=>{dbErr=(e&&e.code==='invalid_argument')?'Vous n’avez pas le droit de modifier ces données.':'Enregistrement impossible pour le moment.';if(e&&e.code==='invalid_argument')canWrite=false;renderStatus()});
+}
+function del(col,id){delete S[col][id];if(db){const p=col+'/'+id;queue[p]=(queue[p]||Promise.resolve()).then(()=>db.doc(p).delete()).catch(()=>{dbErr='Suppression impossible pour le moment.';renderStatus()})}}
+function saveRow(col,id){save(col+'/'+id,S[col][id])}
+function saveCfg(){save('config/main',S.cfg||{})}
+function newId(p){return p+Date.now().toString(36)+Math.random().toString(36).slice(2,5)}
+function addRow(col,defaults){const id=newId(col[0]);S[col][id]=Object.assign({ord:Date.now()},defaults);saveRow(col,id);render()}
 
-  /* ---------- tes règles de révision (reprises de ton Excel) ---------- */
-  function examNum(sem, mat) {
-    for (var i = 0; i < data.mats.length; i++) { var m = data.mats[i]; if (m.semestre === sem && m.nom === mat) return m.examen ? dnum(m.examen) : null; }
-    return null;
-  }
-  /* niveau réel : 5 = maîtrise ; 6, 7… = plusieurs 5 d'affilée, déduits de l'historique */
-  function runOf(id, hs) {
-    var mine = (hs || []).filter(function (h) { return h.id === id; }).sort(function (a, b) { return a.ts - b.ts; }), run = 0, i;
-    for (i = mine.length - 1; i >= 0; i--) { if (mine[i].niveau >= 5) run++; else break; }
-    return { run: run, all: i < 0 };
-  }
-  function lvl(x) {
-    var s = x.succes || 0; if (s < 5) return s;
-    var r = runOf(x.id, data.hist), P = r.all ? (x.p5 || 0) : 0;
-    if (!r.run && !P) return 5;
-    return Math.min(11, 4 + Math.max(1, P + r.run));
-  }
-  function interval(n) {
-    var R = data.reglages;
-    if (n > 5) { var b = R.intervalles[5], p = typeof R.pasApres5 === 'number' ? R.pasApres5 : 20; return (typeof b === 'number' ? b : 0) + (n - 5) * p; }
-    var v = R.intervalles[n]; return typeof v === 'number' ? v : 0;
-  }
-  function nivName(n) { return n <= 5 ? (NIV[n] || '') : 'Maîtrise totale · ' + (n - 4) + ' fois de suite'; }
-  function revisionAt(x, I, iv) {
-    var R = data.reglages, E = examNum(x.semestre, x.matiere);
-    if (E !== null) {
-      var dE = E - I;
-      if (dE >= 0 && dE <= R.debutExam) {
-        var X = Math.max(1, dE > R.seuilButoire ? R.butoireSi : R.butoireSinon); /* au plus tard la veille de l'examen */
-        var plafond = dE > X ? dE - X : 1e9;
-        return I + Math.min(iv / interval(5) * (dE - X), plafond);
-      }
-    }
-    return I + iv;
-  }
-  function revision(x) { return revisionAt(x, dnum(x.evalue), interval(lvl(x))); }
-  function examAt(x, D) { var E = examNum(x.semestre, x.matiere); if (E === null) return false; var d = E - D; return d >= 0 && d <= data.reglages.debutExam; }
-  function modeExam(x) {
-    var E = examNum(x.semestre, x.matiere); if (E === null) return false;
-    var d = E - TODAY(); return d >= 0 && d <= data.reglages.debutExam;
-  }
-  function mins(x) { return x.minutes > 0 ? +x.minutes : data.reglages.minutesDefaut; }
-  function visible(x) { var s = data.reglages.semestres; return !s.length || s.indexOf(x.semestre) >= 0; }
-  function budgetDuJour() {
-    var d = new Date(), v = data.reglages.planning[(d.getDay() + 6) % 7];
-    return typeof v === 'number' && !isNaN(v) ? v : 1e9;
-  }
-  /* sans limite : aujourd'hui on ne peut pas dépasser les heures restantes jusqu'à demain, arrondies à l'heure supérieure */
-  function minutesRestantes() { var n = new Date(), m = (24 * 60) - (n.getHours() * 60 + n.getMinutes()); return Math.max(60, Math.ceil(m / 60) * 60); }
-  function dejaFait() {
-    var t = todayISO(), s = 0;
-    data.ex.forEach(function (x) { if (x.evalue === t && visible(x)) s += mins(x); });
-    return s;
-  }
-  function plan() {
-    var t = TODAY(), list = [];
-    data.ex.forEach(function (x, i) {
-      if (!visible(x) || !x.evalue) return;
-      var r = revision(x);
-      if (r < t + 1) list.push({ x: x, r: r, ex: modeExam(x), i: i });
-    });
-    list.sort(function (a, b) {
-      var ka = (a.ex ? 0 : 1) * 1e11 + a.r * 1e5 + lvl(a.x) * 1e4 + a.i;
-      var kb = (b.ex ? 0 : 1) * 1e11 + b.r * 1e5 + lvl(b.x) * 1e4 + b.i;
-      return ka - kb;
-    });
-    var budget = budgetDuJour(), fait = dejaFait(), cum = 0, eff = budget, ef = fait; if (budget >= 1e9) { eff = minutesRestantes(); ef = 0; }
-    list.forEach(function (o) {
-      var m = mins(o.x);
-      if (o.x.reporte === todayISO()) { o.rep = true; o.in = false; return; } /* reporté par toi : ne prend pas de temps aujourd'hui */
-      o.in = cum + m <= eff - ef || (cum === 0 && eff > ef);
-      if (o.in) cum += m; /* un exo qui ne rentre pas est reporté ; un plus court peut prendre sa place */
-    });
-    return { list: list, budget: budget, fait: fait };
-  }
-
-  /* ---------- filtres semestres ---------- */
-  function semestres() {
-    var s = []; data.mats.forEach(function (m) { if (s.indexOf(m.semestre) < 0) s.push(m.semestre); });
-    var R = data.reglages;
-    if (R.ordreSem === 'alpha') return s.sort(function (a, b) { return a.localeCompare(b, 'fr', { numeric: true, sensitivity: 'base' }); });
-    var o = R.semOrdre || [];
-    return s.map(function (z, i) { return [z, o.indexOf(z) >= 0 ? o.indexOf(z) : 1000 + i]; }).sort(function (a, b) { return a[1] - b[1]; }).map(function (p) { return p[0]; });
-  }
-  function moveSem(s, dir) {
-    var l = semestres(), i = l.indexOf(s), j = i + dir; if (j < 0 || j >= l.length) return;
-    var t = l[i]; l[i] = l[j]; l[j] = t; data.reglages.semOrdre = l; data.reglages.ordreSem = 'manuel'; save(); render();
-  }
-  function renderFilters() {
-    if (view !== 'dash') Array.prototype.slice.call(document.querySelectorAll('.hbtns .editbtn, header .hh')).forEach(function (n) { n.remove(); });
-    var box = $('filtBox'); box.textContent = ''; var fb = $('filtBtn'), all = semestres();
-    fb.hidden = (view === 'set' || all.length < 2); fb.querySelector('.fdot').hidden = !data.reglages.semestres.length;
-    if (view === 'set' || all.length < 2) return;
-    all.forEach(function (s) {
-      var b = el('button', 'chip', s); b.type = 'button';
-      b.setAttribute('aria-pressed', data.reglages.semestres.indexOf(s) >= 0 ? 'true' : 'false');
-      b.addEventListener('click', function () {
-        var a = data.reglages.semestres, k = a.indexOf(s);
-        if (k >= 0) a.splice(k, 1); else a.push(s);
-        save(); render();
-      });
-      box.appendChild(b);
-    });
-  }
-
-  /* ---------- vue : à faire aujourd'hui ---------- */
-  /* ---------- chronomètre par exercice ---------- */
-  var CHK = 'mes-exercices-chrono';
-  function chGetAll() { try { var o = JSON.parse(localStorage.getItem(CHK) || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; } }
-  function chSetAll(o) { try { localStorage.setItem(CHK, JSON.stringify(o)); } catch (e) { /* ignoré */ } }
-  function chMs(c) { return c ? (c.acc || 0) + (c.start ? Date.now() - c.start : 0) : 0; }
-  function chFmt(ms) { var t = Math.floor(ms / 1000), h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), sec = t % 60; return (h ? h + ':' + ('0' + m).slice(-2) : ('0' + m).slice(-2)) + ':' + ('0' + sec).slice(-2); }
-  var CHI = { watch: '<circle cx="12" cy="13.5" r="7.5"/><path d="M12 9.5v4l2.5 1.5M9.5 3h5M12 3v3M18.2 6.8l1.2-1.2"/>', pause: '<path d="M9 6v12M15 6v12"/>', play: '<path d="M8 5.5v13l10-6.5Z"/>', x: '<path d="M7 7l10 10M17 7L7 17"/>', check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>', skip: '<path d="M5 12h12M13 7l5 5-5 5"/>', back: '<path d="M19 12H7M11 7l-5 5 5 5"/>' };
-  function chSvg(n, sz) { var i = document.createElement('i'); i.className = 'chi'; i.innerHTML = '<svg viewBox="0 0 24 24" width="' + sz + '" height="' + sz + '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + CHI[n] + '</svg>'; return i; }
-  function chronoEl(id) {
-    var box = el('div', 'chrono'), all = chGetAll(), c = all[id];
-    function redo() { var n = chronoEl(id); box.replaceWith(n); }
-    if (!c) {
-      var b = el('button', 'chgo'); b.type = 'button'; b.appendChild(chSvg('watch', 14)); b.appendChild(document.createTextNode('Chrono'));
-      b.addEventListener('click', function (e) { e.stopPropagation(); var a = chGetAll(); a[id] = { acc: 0, start: Date.now() }; chSetAll(a); redo(); });
-      box.appendChild(b); return box;
-    }
-    box.className = 'chrono on' + (c.start ? ' run' : '');
-    var t = el('span', 'chtime', chFmt(chMs(c))); t.dataset.chid = id; box.appendChild(chSvg('watch', 14)); box.appendChild(t);
-    var pb = el('button', 'chpp'); pb.type = 'button'; pb.title = c.start ? 'Pause' : 'Reprendre'; pb.appendChild(chSvg(c.start ? 'pause' : 'play', 12));
-    pb.addEventListener('click', function (e) { e.stopPropagation(); var a = chGetAll(), k = a[id]; if (!k) return; if (k.start) { k.acc = chMs(k); k.start = null; } else k.start = Date.now(); chSetAll(a); redo(); });
-    var xb = el('button', 'chx'); xb.type = 'button'; xb.title = 'Remettre à zéro'; xb.appendChild(chSvg('x', 10));
-    xb.addEventListener('click', function (e) { e.stopPropagation(); var a = chGetAll(); delete a[id]; chSetAll(a); redo(); });
-    box.appendChild(pb); box.appendChild(xb); return box;
-  }
-  setInterval(function () { var all = chGetAll(); document.querySelectorAll('.chtime').forEach(function (n) { var c = all[n.dataset.chid]; if (c && c.start) n.textContent = chFmt(chMs(c)); }); }, 1000);
-
-  function exoCard(o, withBtn) {
-    var x = o.x, c = el('div', 'card' + (o.ex ? ' exam' : ''));
-    var top = el('div', 'row2');
-    var lx = lvl(x), nb = el('div', 'niv', String(lx)); nb.style.background = scale(lx); nb.style.color = lx < 3.2 ? '#fff' : '#5c1530'; nb.title = nivName(lx);
-    var l = el('div'); l.style.flex = '1'; l.appendChild(el('b', '', x.matiere + (x.intitule ? ' · ' + x.intitule : '')));
-    l.appendChild(el('div', 'muted', x.semestre + ' · fait le ' + fromNum(dnum(x.evalue))));
-    top.appendChild(nb); top.appendChild(l);
-    c.appendChild(top);
-    var p = el('div'); p.style.marginTop = '6px';
-    var late = Math.floor(TODAY() - o.r);
-    if (late > 0) p.appendChild(el('span', 'pill late', 'retard ' + late + ' j'));
-    else p.appendChild(pillI('cal', 'à revoir ' + fromNum(o.r)));
-    if (o.ex) p.appendChild(pillI('flag', 'examen · J-' + (examNum(x.semestre, x.matiere) - TODAY())));
-    p.appendChild(pillI('clock', mins(x) + ' min'));
-    c.appendChild(p);
-    if (withBtn) {
-      var acts = el('div', 'acts');
-      var rb = el('button', 'abtn soft'); rb.type = 'button'; rb.appendChild(chSvg(o.rep ? 'back' : 'skip', 14)); rb.appendChild(document.createTextNode(o.rep ? 'Remettre' : 'Reporter'));
-      rb.addEventListener('click', function () { if (o.rep) { delete x.reporte; toast('Remis dans ta liste.'); } else { x.reporte = todayISO(); toast('Reporté : ton temps va aux autres exos.'); } save(); render(); });
-      var b = el('button', 'abtn main'); b.type = 'button'; b.appendChild(chSvg('check', 18)); b.title = 'Refait'; b.setAttribute('aria-label', 'Refait'); b.addEventListener('click', function () { openDone(x.id); });
-      acts.appendChild(rb); acts.appendChild(b); acts.appendChild(chronoEl(x.id)); c.appendChild(acts);
-    }
-    c.addEventListener('click', function (e) { if (!e.target.closest('button')) openEditor(x.id); });
-    return c;
-  }
-  function renderToday() {
-    var box = $('v-today'); box.textContent = '';
-    var P = plan(), d = new Date();
-    var head = el('div', 'card');
-    var tot = 0; P.list.forEach(function (o) { if (o.in) tot += mins(o.x); });
-    var jt = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); head.appendChild(el('h2', '', 'Aujourd’hui'));
-    var bud = P.budget >= 1e9 ? 'sans limite (max ' + (minutesRestantes() / 60) + ' h jusqu’à demain)' : P.budget + ' min';
-    function hm(m) { m = Math.round(m); return Math.floor(m / 60) + 'h' + ('0' + (m % 60)).slice(-2); }
-    var hr = minutesRestantes() / 60;
-    head.appendChild(el('div', 'muted', (P.budget >= 1e9 ? 'Il reste ' + hr + ' heure' + (hr > 1 ? 's' : '') : 'Budget du jour : ' + hm(P.budget)) + ' · déjà fait : ' + hm(P.fait) + ' · prévu : ' + hm(tot)));
-    var bar = el('div', 'bar'), fill = el('i'); fill.style.width = (P.budget >= 1e9 ? 0 : Math.min(100, Math.round(P.fait / P.budget * 100))) + '%'; bar.appendChild(fill); head.appendChild(bar);
-    box.appendChild(head);
-    var inP = P.list.filter(function (o) { return o.in; }), out = P.list.filter(function (o) { return !o.in && !o.rep; }), reps = P.list.filter(function (o) { return o.rep; });
-    if (!inP.length) box.appendChild(el('p', 'muted', data.ex.length ? 'Rien à faire aujourd’hui. Bravo !' : 'Aucun exercice. Ajoute-en avec le bouton + (onglet Exos) ou restaure ta sauvegarde (menu ⋮).'));
-    inP.forEach(function (o) { box.appendChild(exoCard(o, true)); });
-    if (out.length) {
-      var det = document.createElement('details'); det.appendChild(el('summary', '', 'Reportés à demain ou après (' + out.length + ')'));
-      out.slice(0, 60).forEach(function (o) { det.appendChild(exoCard(o, true)); });
-      box.appendChild(det);
-    }
-    if (reps.length) {
-      var dr = document.createElement('details'); dr.appendChild(el('summary', '', 'Reportés par toi aujourd’hui (' + reps.length + ')'));
-      reps.forEach(function (o) { dr.appendChild(exoCard(o, true)); }); box.appendChild(dr);
-    }
-    box.appendChild(histBlock());
-  }
-
-
-  /* ---------- historique de la semaine ---------- */
-  function addHist(x, niv) {
-    data.hist = data.hist || [];
-    var mi = $('doneMin') && parseFloat($('doneMin').value); if (mi > 0 && mi < 1000) x.minutes = Math.round(mi);
-    data.hist.push({ id: x.id, ts: Date.now(), jour: todayISO(), avant: { succes: x.succes, evalue: x.evalue || '' }, niveau: niv, m: mins(x) });
-  }
-  function histBlock() {
-    var lim = Date.now() - 7 * DAY; data.corbeille = (data.corbeille || []).filter(function (c) { return c && c.ex && c.ts > lim; });
-    var L = (data.hist || []).filter(function (h) { return h.ts > lim; }).map(function (h) { return { ts: h.ts, h: h }; }).concat(data.corbeille.map(function (c) { return { ts: c.ts, c: c }; })).sort(function (a, b) { return b.ts - a.ts; });
-    var det = document.createElement('details'); det.appendChild(el('summary', '', 'Historique de la semaine (' + L.length + ')'));
-    if (!L.length) { det.appendChild(el('p', 'muted', 'Rien de fait cette semaine.')); return det; }
-    L.forEach(function (it) {
-      var c = el('div', 'card'), top = el('div', 'row2'), l = el('div'), row = el('div'); row.style.marginTop = '8px';
-      var d = new Date(it.ts), jour = JOURS[(d.getDay() + 6) % 7] + ' ' + ('0' + d.getDate()).slice(-2) + '/' + ('0' + (d.getMonth() + 1)).slice(-2);
-      if (it.c) {
-        var cx = it.c.ex;
-        l.appendChild(el('b', '', cx.matiere + (cx.intitule ? ' · ' + cx.intitule : '')));
-        l.appendChild(el('div', 'muted', jour + ' · exercice supprimé'));
-        var rs = el('button', 'plain', 'Restaurer'); rs.type = 'button';
-        rs.addEventListener('click', function () { if (!data.ex.some(function (e) { return e.id === cx.id; })) data.ex.push(cx); data.corbeille = data.corbeille.filter(function (z) { return z !== it.c; }); save(); render(); toast('Exercice restauré.'); });
-        row.appendChild(rs);
-      } else {
-        var h = it.h, x = data.ex.filter(function (e) { return e.id === h.id; })[0]; if (!x) return;
-        l.appendChild(el('b', '', x.matiere + (x.intitule ? ' · ' + x.intitule : '')));
-        l.appendChild(el('div', 'muted', jour + ' · niveau ' + h.avant.succes + ' → ' + h.niveau));
-        var un = el('button', 'plain', 'Annuler'); un.type = 'button';
-        un.addEventListener('click', function () { x.succes = h.avant.succes; x.evalue = h.avant.evalue; data.hist = data.hist.filter(function (z) { return z !== h; }); save(); render(); toast('Remis comme avant.'); });
-        row.appendChild(un);
-      }
-      top.appendChild(l); c.appendChild(top); c.appendChild(row); det.appendChild(c);
-    });
-    return det;
-  }
-
-  /* ---------- vue : tous les exercices ---------- */
-  function renderExos() {
-    var box = $('exoList'); box.textContent = '';
-    var q = norm($('search').value), t = TODAY();
-    var l = data.ex.filter(function (x) { return visible(x) && (!q || norm(x.matiere + ' ' + x.intitule + ' ' + x.semestre).indexOf(q) >= 0); })
-      .map(function (x) { return { x: x, r: x.evalue ? revision(x) : 1e9, ex: modeExam(x) }; })
-      .sort(function (a, b) { return a.r - b.r; });
-    box.appendChild(el('p', 'muted', l.length + ' exercice(s)'));
-    l.slice(0, shown).forEach(function (o) { box.appendChild(exoCard(o, false)); });
-    if (l.length > shown) { var m = el('button', 'row plain', 'Afficher plus'); m.addEventListener('click', function () { shown += 120; renderExos(); }); box.appendChild(m); }
-  }
-
-
-  function renameSem(old) {
-    var n = window.prompt('Nouveau nom du semestre « ' + old + ' » :', old); if (n === null) return; n = n.trim();
-    if (!n || n === old) return;
-    if (semestres().indexOf(n) >= 0 && !window.confirm('« ' + n + ' » existe déjà : les deux semestres vont être regroupés. Continuer ?')) return;
-    data.mats.forEach(function (m) { if (m.semestre === old) m.semestre = n; });
-    data.ex.forEach(function (x) { if (x.semestre === old) x.semestre = n; });
-    data.reglages.semestres = data.reglages.semestres.map(function (z) { return z === old ? n : z; });
-    save(); render(); toast('Semestre renommé.');
-  }
-  function renameMat(m) {
-    var n = window.prompt('Nouveau nom de la matière « ' + m.nom + ' » :', m.nom); if (n === null) return; n = n.trim();
-    if (!n || n === m.nom) return;
-    var old = m.nom;
-    data.ex.forEach(function (x) { if (x.semestre === m.semestre && x.matiere === old) x.matiere = n; });
-    m.nom = n; save(); render(); toast('Matière renommée.');
-  }
-
-  /* ---------- vue : examens ---------- */
-  function renderMats() {
-    var box = $('v-mats'); box.textContent = '';
-    var od = el('div', 'chips'); od.style.padding = '0 0 10px'; od.appendChild(el('span', 'muted', 'Ordre des semestres :'));
-    [['alpha', 'A → Z'], ['manuel', 'Manuel (↑ ↓)']].forEach(function (a) {
-      var b = el('button', 'chip', a[1]); b.type = 'button'; b.setAttribute('aria-pressed', data.reglages.ordreSem === a[0] ? 'true' : 'false');
-      b.addEventListener('click', function () { if (a[0] === 'manuel' && !(data.reglages.semOrdre || []).length) data.reglages.semOrdre = semestres(); data.reglages.ordreSem = a[0]; save(); render(); });
-      od.appendChild(b);
-    });
-    box.appendChild(od);
-    if (data.reglages.ordreSem !== 'alpha' && semestres().length > 1) {
-      var ol = el('div', 'dlist');
-      var rows = el('div', 'drows'); ol.appendChild(rows);
-      semestres().forEach(function (sm) {
-        var r = el('div', 'drow'); r.dataset.sem = sm; var h = el('span', 'dh', '⠿'); r.appendChild(h); r.appendChild(el('span', 'dn', sm));
-        h.addEventListener('pointerdown', function (e) {
-          e.preventDefault(); r.classList.add('drag');
-          function mv(ev) {
-            var kids = Array.prototype.slice.call(rows.children);
-            for (var i = 0; i < kids.length; i++) {
-              var k = kids[i]; if (k === r) continue; var b = k.getBoundingClientRect();
-              if (ev.clientY > b.top && ev.clientY < b.bottom) { var ri = kids.indexOf(r); if (ri < i) rows.insertBefore(r, k.nextSibling); else rows.insertBefore(r, k); break; }
-            }
-          }
-          function up() {
-            window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); r.classList.remove('drag');
-            data.reglages.semOrdre = Array.prototype.map.call(rows.children, function (k) { return k.dataset.sem; }); data.reglages.ordreSem = 'manuel'; save(); render();
-          }
-          window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
-        });
-        rows.appendChild(r);
-      });
-      box.appendChild(ol);
-    }
-    semestres().forEach(function (s) {
-      var det = document.createElement('details'); det.appendChild(el('summary', '', s));
-      var tb = document.createElement('table'); tb.className = 'tbl';
-      var hd = document.createElement('tr'); ['Matière', 'Examen', 'Note /20'].forEach(function (h) { hd.appendChild(el('th', '', h)); }); tb.appendChild(hd);
-      data.mats.forEach(function (m) {
-        if (m.semestre !== s) return;
-        var tr = document.createElement('tr'), td1 = document.createElement('td'), td2 = document.createElement('td'), td3 = document.createElement('td');
-        var rb = el('button', 'namebtn', m.nom + ' ✎'); rb.type = 'button';
-        rb.addEventListener('click', function () { renameMat(m); });
-        td1.appendChild(rb);
-        var us = document.createElement('select'); us.className = 'uesel';
-        function fillUE() {
-          us.textContent = ''; var o0 = el('option', '', '— UE : aucune —'); o0.value = ''; us.appendChild(o0);
-          ueList(s).forEach(function (u) { var o = el('option', '', 'UE : ' + u); o.value = u; us.appendChild(o); });
-          var on = el('option', '', '+ Nouvelle UE…'); on.value = '__new'; us.appendChild(on); us.value = m.ue || '';
-        }
-        fillUE();
-        us.addEventListener('change', function () {
-          var v = us.value;
-          if (v === '__new') { var n = window.prompt('Nom de la nouvelle UE (semestre ' + s + ') :'); if (!n || !n.trim()) { us.value = m.ue || ''; return; } v = n.trim(); }
-          m.ue = v || null; save(); render(); toast(v ? 'Rangée dans « ' + v + ' ».' : 'UE retirée.');
-        });
-        td1.appendChild(us);
-        var inp = document.createElement('input'); inp.type = 'date'; inp.value = m.examen || '';
-        inp.addEventListener('change', function () { m.examen = inp.value || null; save(); toast('Date enregistrée.'); });
-        td2.appendChild(inp);
-        var nt = document.createElement('input'); nt.type = 'number'; nt.inputMode = 'decimal'; nt.step = '0.01'; nt.min = 0; nt.max = 20; nt.placeholder = '–'; nt.value = typeof m.note === 'number' ? m.note : '';
-        nt.addEventListener('change', function () { m.note = nt.value === '' ? null : +nt.value; save(); toast('Note enregistrée.'); });
-        td3.appendChild(nt);
-        tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tb.appendChild(tr);
-      });
-      var ub = el('div', 'uebox');
-      ueList(s).forEach(function (u) {
-        var r = el('div', 'uerow'), nb = el('button', 'namebtn', u + ' ✎'); nb.type = 'button';
-        nb.addEventListener('click', function () {
-          var n = window.prompt('Renommer l’UE « ' + u + ' » (vide = supprimer l’UE, les matières restent) :', u); if (n === null) return; n = n.trim();
-          (data.ues || []).forEach(function (z) { if (z.semestre === s && z.nom === u) z.nom = n; }); if (!n) data.ues = data.ues.filter(function (z) { return z.nom; });
-          data.mats.forEach(function (m) { if (m.semestre === s && m.ue === u) m.ue = n || null; }); save(); render();
-        });
-        var def = (data.ues || []).filter(function (z) { return z.semestre === s && z.nom === u; })[0];
-        var inp = document.createElement('input'); inp.type = 'number'; inp.inputMode = 'decimal'; inp.step = '0.01'; inp.min = 0; inp.max = 20;
-        var auto = (function () { var g = ueGroups(s).filter(function (x) { return x.nom === u; })[0]; return g && !(def && typeof def.moy === 'number') ? g.avg : null; })();
-        inp.placeholder = auto !== null ? fmt1(auto) + ' (auto)' : 'moyenne /20'; inp.value = def && typeof def.moy === 'number' ? def.moy : '';
-        inp.addEventListener('change', function () { ueDef(s, u).moy = inp.value === '' ? null : +inp.value; save(); render(); });
-        r.appendChild(nb); r.appendChild(inp); ub.appendChild(r);
-        var mw = el('div', 'uemats');
-        data.mats.forEach(function (m) {
-          if (m.semestre !== s || m.ue !== u) return;
-          var ch = el('button', 'chip', m.nom + (typeof m.note === 'number' ? ' · ' + fmt1(m.note) : '') + ' ✕'); ch.type = 'button';
-          ch.addEventListener('click', function () { m.ue = null; save(); render(); });
-          mw.appendChild(ch);
-        });
-        var ad = document.createElement('select'); ad.className = 'uesel'; var o0 = el('option', '', '+ Ajouter une matière'); o0.value = ''; ad.appendChild(o0);
-        data.mats.forEach(function (m, mi) { if (m.semestre !== s || m.ue === u) return; var o = el('option', '', m.nom + (m.ue ? ' (dans ' + m.ue + ')' : '')); o.value = String(mi); ad.appendChild(o); });
-        ad.addEventListener('change', function () { if (ad.value === '') return; data.mats[+ad.value].ue = u; save(); render(); });
-        if (ad.options.length > 1) mw.appendChild(ad);
-        ub.appendChild(mw);
-      });
-      var addUE = el('button', 'plain', '+ Ajouter une UE'); addUE.type = 'button';
-      addUE.addEventListener('click', function () { var n = window.prompt('Nom de la nouvelle UE (semestre ' + s + ') :'); if (!n || !n.trim()) return; ueDef(s, n.trim()); save(); render(); });
-      ub.appendChild(addUE); det.appendChild(ub);
-      det.appendChild(tb);
-      var ren = el('button', 'plain', 'Renommer ce semestre'); ren.type = 'button'; ren.style.margin = '8px 8px 0 0';
-      ren.addEventListener('click', function () { renameSem(s); });
-      det.appendChild(ren);
-      if (data.reglages.ordreSem !== 'alpha') {
-        var up = el('button', 'plain', '↑ Monter'), dn = el('button', 'plain', '↓ Descendre'); up.type = dn.type = 'button'; up.style.margin = dn.style.margin = '8px 8px 0 0';
-        up.addEventListener('click', function () { moveSem(s, -1); }); dn.addEventListener('click', function () { moveSem(s, 1); });
-        det.appendChild(up); det.appendChild(dn);
-      }
-      var add = el('button', 'plain', '+ Ajouter une matière'); add.type = 'button'; add.style.marginTop = '8px';
-      add.addEventListener('click', function () {
-        var n = window.prompt('Nom de la matière pour ' + s + ' :'); if (!n || !n.trim()) return;
-        data.mats.push({ semestre: s, nom: n.trim(), examen: null }); save(); render();
-      });
-      det.appendChild(add); box.appendChild(det);
-    });
-    var ns = el('button', 'row plain', '+ Ajouter un semestre'); ns.type = 'button';
-    ns.addEventListener('click', function () {
-      var n = window.prompt('Nom du semestre (ex. S8 - 2A) :'); if (!n || !n.trim()) return;
-      var m = window.prompt('Première matière de ' + n.trim() + ' :'); if (!m || !m.trim()) return;
-      data.mats.push({ semestre: n.trim(), nom: m.trim(), examen: null }); save(); render();
-    });
-    box.appendChild(ns);
-  }
-
-  /* ---------- vue : tableau de bord ---------- */
-  var C_LATE = '#ad1457', C_EXAM = '#f1b3c6', C_NORM = '#f8538b', C_PV = '#838383', C_PVL = '#3f3f3f';
-  var C_NIV = ['#ad1457', '#a33c5e', '#cc597f', '#e57d9f', '#f0a9c0', '#f8d3e0'];
-  var JS = ['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam'];
-  function dcard(title, extra) { var c = el('div', 'dcard' + (extra ? ' ' + extra : '')); if (title) c.appendChild(el('h2', '', title)); return c; }
-  function scale(v) {
-    var A = [173, 20, 87], B = [248, 83, 139], C = [249, 211, 224], f, p, q;
-    v = Math.max(0, Math.min(5, v)); if (v <= 2.5) { f = v / 2.5; p = A; q = B; } else { f = (v - 2.5) / 2.5; p = B; q = C; }
-    return 'rgb(' + [0, 1, 2].map(function (i) { return Math.round(p[i] + (q[i] - p[i]) * f); }).join(',') + ')';
-  }
-  /* niveau minimal pour ne plus avoir à réviser avant l'examen : le plus petit niveau dont l'intervalle couvre les jours restants */
-  /* motif vagues rose pâle (clip déjà appliqué) */
-  function waves(g, x, y, w, h, col, step, amp, lw) {
-    g.strokeStyle = col; g.lineWidth = lw; var per = step * 2;
-    for (var yy = y - amp; yy < y + h + amp; yy += step) { g.beginPath(); for (var xx = x - per; xx <= x + w + per; xx += 2) { var yv = yy + Math.sin((xx - x) / per * Math.PI * 2) * amp; if (xx === x - per) g.moveTo(xx, yv); else g.lineTo(xx, yv); } g.stroke(); }
-  }
-  function needLevel(d) { for (var n = 0; n <= 11; n++) if (interval(n) >= d) return n; return 11; }
-  function nivBadge(v, sz, cv) {
-    var c = cv === undefined ? v : cv, b = el('div', 'niv' + (sz ? ' ' + sz : ''), fmt1(Math.round(v * 10) / 10)); b.style.background = scale(c); b.style.color = c < 3.2 ? '#fff' : '#5c1530'; return b;
-  }
-  function fmt1(v) { return (Math.round(v * 100) / 100).toString().replace('.', ','); }
-  var dashEdit = false, ANIM = 1, animTok = 0, lastSig = null, semPrev = {};
-  function renderDash() {
-    var box = $('v-dash'); box.textContent = ''; var cards = {}, draws = {};
-    var t = TODAY(), L = data.ex.filter(function (x) { return visible(x) && x.evalue; });
-    var late = 0, due = 0;
-    L.forEach(function (x) { var r = revision(x); if (r < t) late++; else if (r < t + 1) due++; });
-    var todo = late + due;
-    var matsV = data.mats.filter(function (m) { return !data.reglages.semestres.length || data.reglages.semestres.indexOf(m.semestre) >= 0; });
-    var fut = matsV.filter(function (m) { return m.examen && dnum(m.examen) >= t; }).sort(function (a, b) { return dnum(a.examen) - dnum(b.examen); });
-    var dh = el('div', 'dhead'), hh = el('span', 'hh'); hh.innerHTML = '<svg viewBox="0 0 24 22" width="34" height="31" style="position:absolute;left:0;top:0"><path fill="#f08ab0" d="M12 21.5C5 15.8 1 12.2 1 7.6 1 4.4 3.5 2 6.6 2c2 0 3.9 1 5.4 3C13.5 3 15.4 2 17.4 2 20.5 2 23 4.4 23 7.6c0 4.6-4 8.2-11 13.9z"/></svg><svg viewBox="0 0 24 22" width="22" height="20" style="position:absolute;left:18px;top:16px"><path fill="#ad1457" d="M12 21.5C5 15.8 1 12.2 1 7.6 1 4.4 3.5 2 6.6 2c2 0 3.9 1 5.4 3C13.5 3 15.4 2 17.4 2 20.5 2 23 4.4 23 7.6c0 4.6-4 8.2-11 13.9z"/></svg>';
-    var tt = el('div', 'dht'); tt.appendChild(el('b', '', 'Mes révisions')); tt.appendChild(el('small', '', 'Méthode des J · suivi de mes exercices'));
-    var dtxt = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); var dd0 = el('span', 'dhd', dtxt.charAt(0).toUpperCase() + dtxt.slice(1));
-    var hdr = document.querySelector('header'); Array.prototype.slice.call(hdr.querySelectorAll('.hh')).forEach(function (n) { n.remove(); }); hdr.insertBefore(hh, hdr.firstChild); dh.appendChild(dd0); box.appendChild(dh);
-    function fitDate() { dd0.style.fontSize = ''; var sz = parseFloat(getComputedStyle(dd0).fontSize), g = 0; while (dd0.scrollWidth > dd0.clientWidth + 1 && sz > 14 && g++ < 60) { sz -= 1; dd0.style.fontSize = sz + 'px'; } }
-    setTimeout(fitDate, 0); if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitDate); window.onresize = fitDate;
-    var ban = el('div', 'banner');
-    ban.textContent = todo + ' exercice' + (todo > 1 ? 's' : '') + ' à réviser aujourd’hui';
-    if (fut.length) { var dd = dnum(fut[0].examen) - t; ban.textContent = todo + ' exercice' + (todo > 1 ? 's' : '') + ' à réviser aujourd’hui  ·  Prochain examen : ' + fut[0].nom + ' ' + (dd === 0 ? 'aujourd’hui' : 'dans ' + dd + ' jour' + (dd > 1 ? 's' : '')); }
-    /* bandeau retiré */
-
-    var sv = semestres().filter(function (z) { return !data.reglages.semestres.length || data.reglages.semestres.indexOf(z) >= 0; }).map(semAvg).filter(function (v) { return v !== null; });
-    var moy = sv.length ? sv.reduce(function (a, b) { return a + b; }, 0) / sv.length : null;
-    var k = el('div', 'kpis3');
-    [['EXERCICES', L.length, 'enregistrés'], ['AUJOURD’HUI', todo, ''], ['MOYENNE /20', moy === null ? '–' : fmt1(moy), '']].forEach(function (a, i) {
-      var d = el('div', 'kpi3'); d.appendChild(el('small', '', a[0])); d.appendChild(el('b', '', a[1])); if (a[2]) d.appendChild(el('span', '', a[2])); d.appendChild(el('u', i === 1 ? 'mid' : '')); k.appendChild(d);
-    });
-    box.appendChild(k);
-
-    /* moyenne par semestre */
-    var c0 = dcard('Moyenne par semestre'), sems = semestres(); /* toujours tous les semestres, sans filtre */
-    var cols = el('div', 'cols');
-    [0, 5, 10, 15, 20].forEach(function (g) { var gl = el('div', 'gl'); gl.style.bottom = (26 + g * 6) + 'px'; gl.appendChild(el('span', '', String(g))); cols.appendChild(gl); });
-    sems.forEach(function (sm) {
-      var v = semAvg(sm) || 0;
-      var col = el('div', 'col'); col.appendChild(el('span', 'v', v ? fmt1(v) : '–'));
-      var bar = el('i'); var hNew = Math.round(v * 6), hOld = semPrev[sm] === undefined ? hNew : semPrev[sm]; bar.style.height = hOld + 'px'; if (hOld !== hNew) { bar.style.transition = 'height 1s ease'; (function (b, h) { setTimeout(function () { b.style.height = h + 'px'; }, 30); })(bar, hNew); } semPrev[sm] = hNew; col.appendChild(bar); col.appendChild(el('span', 'l', sm)); cols.appendChild(col);
-    });
-    c0.appendChild(cols); cards.sem = c0;
-
-    /* moyenne par matière : même nom fusionné, semestres cochés */
-    var cm = dcard('Moyenne par matière · semestres cochés'), gm = {};
-    L.forEach(function (x) { var k = x.matiere.trim().toLowerCase(); var g = gm[k] = gm[k] || { nom: x.matiere, s: 0, n: 0, sem: {}, nt: [] }; g.s += lvl(x); g.n++; g.sem[x.semestre] = 1; });
-    matsV.forEach(function (m) { var g = gm[m.nom.trim().toLowerCase()]; if (g && typeof m.note === 'number') g.nt.push(m.note); });
-    var lm = Object.keys(gm).map(function (k) { var g = gm[k]; g.a = g.s / g.n; g.ns = Object.keys(g.sem).length; return g; }).sort(function (a, b) { return b.a - a.a; });
-    if (!lm.length) cm.appendChild(el('p', 'muted', 'Aucun exercice dans les semestres cochés.'));
-    else {
-      var lw = el('div', 'mlist');
-      lm.forEach(function (g) {
-        var r = el('div', 'mrow'); r.style.borderLeftColor = scale(g.a); var mn = el('span', 'mn', g.nom); if (g.ns > 1) mn.appendChild(el('em', 'chip2', g.ns + ' sem.')); r.appendChild(mn);
-        r.appendChild(nivBadge(g.a, 'sm')); lw.appendChild(r);
-      });
-      cm.appendChild(lw);
-    }
-    cards.mat = cm;
-
-    /* charge */
-    var c1 = dcard('Charge de révision à venir');
-    var lg = el('div', 'legend');
-    [['En retard', C_LATE], ['Prévu', C_NORM], ['Examen (vagues)', 'hatch'], ['Temps prévu ce jour-là', 'tick']].concat(!data.reglages.prevOff ? [['En retard (prévision)', C_PVL], ['Prévu (prévision)', C_PV], ['Examen (prévision)', 'hatchg']] : []).forEach(function (a) { var sp = el('span'); var i = el('i'); if (a[1] === 'hatch') i.className = 'hat'; else if (a[1] === 'hatchg') i.className = 'hat hg'; else if (a[1] === 'tick') i.className = 'tick'; else i.style.background = a[1]; sp.appendChild(i); sp.appendChild(document.createTextNode(a[0])); lg.appendChild(sp); });
-    c1.appendChild(lg);
-    {
-      var sg = el('div', 'seg'); [[false, 'Sans prévisions'], [true, 'Avec prévisions']].forEach(function (o) {
-        var b = el('button', (!data.reglages.prevOff) === o[0] ? 'on' : '', o[1]); b.type = 'button';
-        b.addEventListener('click', function () { data.reglages.prevOff = !o[0]; save(); renderDash(); }); sg.appendChild(b); });
-      c1.insertBefore(sg, lg);
-    }
-    lg.hidden = true;
-    {
-      var qb = el('button', 'qbtn', '?'); qb.type = 'button'; qb.title = 'Afficher la légende'; qb.setAttribute('aria-label', 'Légende');
-      qb.addEventListener('click', function () { lg.hidden = !lg.hidden; qb.className = 'qbtn' + (lg.hidden ? '' : ' on'); });
-      c1.querySelector('h2').appendChild(qb);
-    }
-    var cv = document.createElement('canvas'), cax = document.createElement('canvas'), sc = el('div', 'scrollx'), wr = el('div', 'chw'); sc.appendChild(cv); wr.appendChild(cax); wr.appendChild(sc); c1.appendChild(wr);
-    cards.charge = c1; draws.charge = function () { drawCharge(cv, L, t, cax); };
-
-    cards.habit = habitCard();
-
-    /* prochains examens */
-    var c3 = dcard('Prochains examens');
-    if (!fut.length) c3.appendChild(el('p', 'muted', 'Aucune date d’examen à venir (onglet Matières).'));
-    else {
-      var tb = el('div', 'exl');
-      fut.forEach(function (m) {
-        var dn = dnum(m.examen), J = dn - t, Rg = data.reglages, X = Math.max(1, J > Rg.seuilButoire ? Rg.butoireSi : Rg.butoireSinon);
-        var need = Math.round(Math.max(0, Math.min(5, 5 * (1 - Math.max(0, J - X) / Math.max(1, Rg.debutExam)))) * 10) / 10;
-        var es = L.filter(function (x) { return x.semestre === m.semestre && x.matiere === m.nom; }), av = es.length ? es.reduce(function (a, x) { return a + lvl(x); }, 0) / es.length : null;
-        var row = el('div', 'exr'), mid = el('div', 'exm');
-        var top = el('div', 'ext'); top.appendChild(el('span', 'chip', m.semestre)); top.appendChild(el('b', 'mn', m.nom)); mid.appendChild(top);
-        var trk = el('div', 'trk'), fl = el('i', 'fl'); fl.style.width = Math.min(100, (av || 0) / 5 * 100) + '%'; if (av !== null) fl.style.background = scale(av); trk.appendChild(fl);
-        for (var q = 1; q < 5; q++) { var tk = el('b', 'tk'); tk.style.left = (q * 20) + '%'; trk.appendChild(tk); }
-        var me = el('u', 'me'); me.style.left = Math.min(100, need / 5 * 100) + '%'; me.title = 'Prévision : niveau à avoir aujourd’hui (' + need + ')'; trk.appendChild(me);
-        mid.appendChild(trk); row.appendChild(mid);
-        var jd = el('div', 'exj'); jd.appendChild(el('b', 'jj', 'J-' + J)); jd.appendChild(el('span', 'dd', fromNum(dn).slice(0, 6) + fromNum(dn).slice(8))); row.appendChild(jd);
-        var nt = el('div', 'exn'); if (av !== null) nt.appendChild(nivBadge(av, 'sm')); row.appendChild(nt);
-        tb.appendChild(row);
-      });
-      var sc = el('div', 'mscroll'); sc.appendChild(tb); c3.appendChild(sc);
-    }
-    cards.exam = c3;
-
-    /* anneau succès */
-    var c2 = dcard('Succès : exos / examens');
-    var cv2 = document.createElement('canvas'); c2.appendChild(cv2);
-    var lg2 = el('div', 'legend'); [0, 1, 2, 3, 4, 5].forEach(function (i) { var sp = el('span'); var ic = el('i'); ic.style.background = C_NIV[i]; sp.appendChild(ic); sp.appendChild(document.createTextNode(i === 5 ? '5+' : String(i))); lg2.appendChild(sp); });
-    c2.appendChild(lg2); cards.donut = c2; draws.donut = function () { drawDonut(cv2, L); };
-
-    var c4 = dcard('Temps de révision par tranche de J');
-    var cv4 = document.createElement('canvas'); c4.appendChild(cv4);
-    var lg4 = el('div', 'legend'); J_LAB.forEach(function (n, i) { var sp = el('span'); var ic = el('i'); ic.style.background = C_J[i]; sp.appendChild(ic); sp.appendChild(document.createTextNode(n)); lg4.appendChild(sp); });
-    c4.appendChild(lg4); cards.jring = c4; draws.jring = function () { drawDonut(cv4, L, true); };
-
-    var c5 = dcard('Courbe de l’oubli');
-    var cv5 = document.createElement('canvas'); c5.appendChild(cv5);
-    var lg5 = el('div', 'legend'); [['#f8538b55', 'Chaque révision'], ['#ad1457', 'Moyenne lissée (100 derniers jours)'], ['#f9d3e0', 'Objectif (4,5 à 5)']].forEach(function (a) { var sp = el('span'); var ic = el('i'); ic.style.background = a[0]; sp.appendChild(ic); sp.appendChild(document.createTextNode(a[1])); lg5.appendChild(sp); });
-    var fl5 = el('div', 'seg'); [[0, 'Toutes les révisions'], [3, 'Exos bien connus (note préc. ≥ 3)']].forEach(function (o) {
-      var b = el('button', (data.reglages.oubliMin === 0 ? 0 : 3) === o[0] ? 'on' : '', o[1]); b.type = 'button';
-      b.addEventListener('click', function () { data.reglages.oubliMin = o[0]; save(); renderDash(); }); fl5.appendChild(b); });
-    c5.insertBefore(fl5, cv5);
-    c5.appendChild(lg5); cards.oubli = c5; draws.oubli = function () { drawOubli(cv5); }; c5.classList.add('wide');
-    cards.charge.classList.add('wide'); cards.habit.classList.add('wide');
-    var R = data.reglages, keys = ['sem', 'mat', 'charge', 'habit', 'exam', 'donut', 'jring', 'oubli'];
-    var ord = (R.dashOrdre || []).filter(function (k) { return keys.indexOf(k) >= 0; }); keys.forEach(function (k) { if (ord.indexOf(k) < 0) { if (k === 'ue' && ord.indexOf('sem') >= 0) ord.splice(ord.indexOf('sem') + 1, 0, k); else ord.push(k); } });
-    var hid = R.dashCache || [];
-    R.dashLarge = R.dashLarge || {}; keys.forEach(function (k) { if (R.dashLarge[k] !== undefined) cards[k].classList.toggle('wide', !!R.dashLarge[k]); });
-    var ed = el('button', 'editbtn' + (dashEdit ? ' on' : '')); ed.type = 'button'; ed.setAttribute('aria-label', dashEdit ? 'Terminer' : 'Modifier l’affichage');
-    ed.innerHTML = dashEdit ? '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>' : '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M14 7l3 3"/></svg>';
-    ed.addEventListener('click', function () { dashEdit = !dashEdit; renderDash(); }); Array.prototype.slice.call(document.querySelectorAll('.hbtns .editbtn')).forEach(function (n) { n.remove(); }); $('filtBtn').parentNode.insertBefore(ed, $('menuBtn'));
-    box.classList.toggle('c1', R.dashCols !== 2);
-    if (dashEdit && window.innerWidth >= 760) { var sg = el('div', 'seg colseg'); [[1, '1 colonne'], [2, '2 colonnes']].forEach(function (o) { var bb = el('button', (R.dashCols === 2 ? 2 : 1) === o[0] ? 'on' : '', o[1]); bb.type = 'button'; bb.addEventListener('click', function () { R.dashCols = o[0]; save(); renderDash(); }); sg.appendChild(bb); }); dh.appendChild(sg); }
-    var half = 0, lastHalf = null;
-    ord.forEach(function (k, i) {
-      var isH = hid.indexOf(k) >= 0; if (isH && !dashEdit) return;
-      var c = cards[k];
-      if (c.classList.contains('wide')) { if (half % 2 === 1 && lastHalf) lastHalf.classList.add('solo'); half = 0; lastHalf = null; } else { half++; lastHalf = c; }
-      if (dashEdit) {
-        var tb = el('div', 'dtools'); c.classList.toggle('dim', isH);
-        function mk(txt, fn, dis) { var b = el('button', 'plain', txt); b.type = 'button'; b.disabled = !!dis; b.addEventListener('click', fn); tb.appendChild(b); }
-        mk('↑', function () { if (i > 0) { ord.splice(i, 1); ord.splice(i - 1, 0, k); R.dashOrdre = ord; save(); renderDash(); } }, i === 0);
-        mk('↓', function () { if (i < ord.length - 1) { ord.splice(i, 1); ord.splice(i + 1, 0, k); R.dashOrdre = ord; save(); renderDash(); } }, i === ord.length - 1);
-        if (window.innerWidth >= 760 && R.dashCols === 2) mk(c.classList.contains('wide') ? '▫ Réduire' : '↔ Agrandir', function () { R.dashLarge[k] = !c.classList.contains('wide'); save(); renderDash(); });
-        mk(isH ? '👁 Afficher' : '🚫 Masquer', function () { R.dashCache = isH ? hid.filter(function (z) { return z !== k; }) : hid.concat([k]); R.dashOrdre = ord; save(); renderDash(); });
-        c.insertBefore(tb, c.firstChild);
-      }
-      box.appendChild(c);
-    });
-    if (half % 2 === 1 && lastHalf) lastHalf.classList.add('solo');
-    function drawAll() { Object.keys(draws).forEach(function (k) { if (cards[k].parentNode === box) draws[k](); }); }
-    var sig = 0; try { var js = JSON.stringify(data.ex); for (var q = 0; q < js.length; q++) sig = (sig * 31 + js.charCodeAt(q)) | 0; } catch (e) { /* ignoré */ }
-    var changed = lastSig !== null && sig !== lastSig; lastSig = sig; var tok = ++animTok;
-    if (!changed) { ANIM = 1; drawAll(); return; }
-    var t0 = performance.now();
-    (function frame(now) {
-      if (tok !== animTok) return;
-      var p = Math.min(1, ((now || performance.now()) - t0) / 1000); ANIM = 1 - Math.pow(1 - p, 3);
-      drawAll(); if (p < 1) requestAnimationFrame(frame); else ANIM = 1;
-    })(t0);
-  }
-
-  function faitsMap() {
-    var map = {}, vu = {};
-    (data.hist || []).forEach(function (h) {
-      var x = data.ex.filter(function (e) { return e.id === h.id; })[0]; vu[h.id] = 1;
-      map[h.jour] = (map[h.jour] || 0) + (h.m || (x ? mins(x) : data.reglages.minutesDefaut));
-    });
-    data.ex.forEach(function (x) { if (!vu[x.id] && x.evalue) map[x.evalue] = (map[x.evalue] || 0) + mins(x); });
-    /* la date de la révision précédente (avant de refaire l'exo) compte aussi, si elle n'est pas déjà enregistrée */
-    var seen = {}; (data.hist || []).forEach(function (h) { seen[h.id + '|' + h.jour] = 1; }); data.ex.forEach(function (x) { if (x.evalue) seen[x.id + '|' + x.evalue] = 1; });
-    (data.hist || []).forEach(function (h) {
-      var pe = h.avant && h.avant.evalue; if (!pe || seen[h.id + '|' + pe]) return; seen[h.id + '|' + pe] = 1;
-      var x = data.ex.filter(function (e) { return e.id === h.id; })[0];
-      map[pe] = (map[pe] || 0) + (h.m || (x ? mins(x) : data.reglages.minutesDefaut));
-    });
-    return map;
-  }
-  function dur(m) { return m >= 60 ? Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + ('0' + m % 60).slice(-2) : '') : m + ' min'; }
-  /* UE : les matières d'une même UE se moyennent ensemble, puis les UE se moyennent entre elles */
-  function ueList(sem) {
-    var u = []; (data.ues || []).forEach(function (z) { if (z.semestre === sem && u.indexOf(z.nom) < 0) u.push(z.nom); });
-    data.mats.forEach(function (m) { if (m.semestre === sem && m.ue && u.indexOf(m.ue) < 0) u.push(m.ue); });
-    return u;
-  }
-  function ueDef(sem, nom) { var r = (data.ues || []).filter(function (z) { return z.semestre === sem && z.nom === nom; })[0]; if (!r) { r = { semestre: sem, nom: nom, moy: null }; data.ues = data.ues || []; data.ues.push(r); } return r; }
-  function mean(a) { return a.length ? a.reduce(function (x, y) { return x + y; }, 0) / a.length : null; }
-  function ueGroups(sem) {
-    var res = [];
-    ueList(sem).forEach(function (u) {
-      var def = (data.ues || []).filter(function (z) { return z.semestre === sem && z.nom === u; })[0];
-      var ms = data.mats.filter(function (m) { return m.semestre === sem && m.ue === u; }), ns = ms.filter(function (m) { return typeof m.note === 'number'; }).map(function (m) { return m.note; });
-      var avg = def && typeof def.moy === 'number' ? def.moy : mean(ns);
-      if (avg !== null) res.push({ nom: u, ue: true, notes: ms, avg: avg, sem: sem });
-    });
-    if (res.length) return res;
-    var g = {}, order = [];
-    data.mats.forEach(function (m) { if (m.semestre !== sem || typeof m.note !== 'number') return; if (!g[m.nom]) { g[m.nom] = { nom: m.nom, ue: false, notes: [m], avg: m.note, sem: sem }; order.push(m.nom); } });
-    return order.map(function (k) { return g[k]; });
-  }
-  function semAvg(sem) { var l = ueGroups(sem); return l.length ? mean(l.map(function (g) { return g.avg; })) : null; }
-  var habitYear = new Date().getFullYear();
-  function habitCard() {
-    var c = dcard('Régularité · temps de révision par jour'), t = TODAY(), Yc = new Date(t * DAY).getUTCFullYear();
-    var FM = faitsMap(), minY = Yc - 1;
-    Object.keys(FM).forEach(function (k) { var y = +k.slice(0, 4); if (y && y < minY) minY = y; });
-    var j1 = Date.UTC(minY, 0, 1) / DAY, j31 = Date.UTC(Yc + 1, 11, 31) / DAY, wd1 = (new Date(j1 * DAY).getUTCDay() + 6) % 7, start = j1 - wd1, W = Math.ceil((j31 - start + 1) / 7), CW = 17;
-    var mois = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
-    var nav = el('div', 'row2'); nav.style.marginBottom = '8px';
-    var cur = el('b', 'hcur', ''), bt = el('button', 'plain', 'Aujourd’hui'); bt.type = 'button';
-    nav.appendChild(cur); nav.appendChild(bt); c.appendChild(nav);
-    var cols = ['#f6e9ee', '#f9d3e0', '#f0a9c0', '#f8538b', '#a33c5e', '#ad1457'];
-    var ST = [[249, 211, 224], [248, 83, 139], [173, 20, 87], [0, 0, 0]], SV = [0, 120, 300, 1440];
-    function colFor(v) {
-      if (v <= 0) return cols[0]; v = Math.min(1440, v); var i = 0; while (i < 2 && v > SV[i + 1]) i++;
-      var a = ST[i], b = ST[i + 1], k = (v - SV[i]) / (SV[i + 1] - SV[i]);
-      return 'rgb(' + [0, 1, 2].map(function (j) { return Math.round(a[j] + (b[j] - a[j]) * k); }).join(',') + ')';
-    }
-    var wrap = el('div', 'habit'), lab = el('div', 'hl');
-    ['L', 'M', 'M', 'J', 'V', 'S', 'D'].forEach(function (z) { lab.appendChild(el('span', '', z)); }); wrap.appendChild(lab);
-    var sc = el('div', 'scrollx'), grid = el('div', 'hg'); grid.style.gridTemplateColumns = 'repeat(' + W + ',' + CW + 'px)';
-    var lastKey = '', todayCell = null;
-    for (var w = 0; w < W; w++) {
-      var d0 = new Date((start + w * 7 + 3) * DAY), key = d0.getUTCFullYear() * 12 + d0.getUTCMonth();
-      if (key !== lastKey) { lastKey = key; var m = d0.getUTCMonth(); var ml = el('span', 'hm', m === 0 ? 'janv ' + d0.getUTCFullYear() : mois[m].slice(0, 4) + (mois[m].length > 4 ? '.' : '')); if (m === 0) ml.style.fontWeight = '800'; ml.style.gridColumn = (w + 1) + ' / span 3'; ml.style.gridRow = 1; grid.appendChild(ml); }
-    }
-    for (var w2 = 0; w2 < W; w2++) for (var r = 0; r < 7; r++) {
-      var dn2 = start + w2 * 7 + r, cell = el('i', 'hc'); cell.style.gridColumn = (w2 + 1); cell.style.gridRow = (r + 2);
-      if (dn2 < j1 || dn2 > j31) cell.style.visibility = 'hidden'; else {
-        var vv = FM[new Date(dn2 * DAY).toISOString().slice(0, 10)] || 0;
-        cell.style.background = dn2 > t ? '#faf3f6' : colFor(vv); if (dn2 === t) { cell.style.outline = '2px solid #ad1457'; todayCell = cell; }
-        (function (n, v2) { cell.addEventListener('click', function () { toast(fromNum(n) + ' : ' + (v2 ? dur(v2) : 'rien de fait')); }); })(dn2, vv);
-      }
-      grid.appendChild(cell);
-    }
-    sc.appendChild(grid); wrap.appendChild(sc); c.appendChild(wrap);
-    function upd() { var wi = Math.max(0, Math.min(W - 1, Math.floor((sc.scrollLeft + sc.clientWidth - 4) / (CW + 3)))), dd = new Date((start + wi * 7 + 3) * DAY); cur.textContent = mois[dd.getUTCMonth()] + ' ' + dd.getUTCFullYear(); }
-    function toToday(smooth) { if (todayCell) sc.scrollTo({ left: Math.max(0, todayCell.offsetLeft + CW + 2 - sc.clientWidth), behavior: smooth ? 'smooth' : 'auto' }); }
-    sc.addEventListener('scroll', upd); bt.addEventListener('click', function () { toToday(true); });
-    setTimeout(function () { if (window._hk != null) sc.scrollLeft = window._hk; else toToday(false); upd(); }, 0);
-    var lg = el('div', 'legend hleg'), z0 = el('span'), zi = el('i'); zi.style.background = cols[0]; z0.appendChild(zi); z0.appendChild(document.createTextNode('0')); lg.appendChild(z0);
-    var gb = el('span', 'gbar'); gb.appendChild(el('em', '', '1 min')); var gs = el('i', 'gstrip'); gs.style.background = 'linear-gradient(90deg,' + [1, 120, 300, 1440].map(colFor).join(',') + ')'; gb.appendChild(gs); gb.appendChild(el('em', '', '24 h')); lg.appendChild(gb);
-    c.appendChild(lg); return c;
-  }
-  function tfmt(m) { m = Math.round(m); return m < 60 ? m + ' min' : (Math.round(m / 6) / 10).toString().replace('.', ',') + ' h'; }
-  var J_LAB = ['En retard', 'J0', 'J1-3', 'J4-10', 'J11-25', 'J26-50', 'J50+'], C_J = ['#ad1457', '#9a3458', '#b84a70', '#d2658b', '#e684a6', '#f2a9c0', '#f8d3e0'];
-  function jIdx(x) { var d = revision(x) - TODAY(); return d < 0 ? 0 : d === 0 ? 1 : d <= 3 ? 2 : d <= 10 ? 3 : d <= 25 ? 4 : d <= 50 ? 5 : 6; }
-  function drawDonut(cv, L, J) {
-    var NB = J ? 7 : 6, COL = J ? C_J : C_NIV, all = [], inn = [], sum = 0; for (var zz = 0; zz < NB; zz++) { all.push(0); inn.push(0); }
-    L.forEach(function (x) { var n = J ? jIdx(x) : Math.min(5, x.succes || 0), wt = J ? mins(x) : 1; all[n] += wt; if (modeExam(x)) inn[n] += wt; sum += J ? wt : n; });
-    var w = cv.clientWidth || 320, h = Math.round(Math.min(Math.max(230, w * 0.8), 480)), dpr = window.devicePixelRatio || 1;
-    cv.width = w * dpr; cv.height = h * dpr; cv.style.height = h + 'px';
-    var g = cv.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, w, h);
-    var cx = w / 2, cy = h / 2, R1 = h / 2 - 8, K = R1 / 100, R0 = R1 * .66, R2 = R1 * .62, R3 = R1 * .38;
-    function ring(vals, ra, rb, hatch) {
-      var tot = vals.reduce(function (a, b) { return a + b; }, 0), a0 = -Math.PI / 2;
-      if (!tot) { g.beginPath(); g.arc(cx, cy, (ra + rb) / 2, 0, 7); g.lineWidth = ra - rb; g.strokeStyle = '#f6e3ea'; g.stroke(); return; }
-      vals.forEach(function (v, i) {
-        if (!v) return; var a1 = a0 + v / tot * Math.PI * 2 * ANIM;
-        g.beginPath(); g.arc(cx, cy, ra, a0, a1); g.arc(cx, cy, rb, a1, a0, true); g.closePath();
-        g.fillStyle = COL[i]; g.fill();
-        if (hatch) { g.save(); g.clip(); waves(g, cx - ra, cy - ra, ra * 2, ra * 2, 'rgba(249,211,224,.9)', 7 * K / 1.2, 1.8 * K / 1.2, 1.2); g.restore(); }
-        g.lineWidth = 2; g.strokeStyle = '#fff'; g.beginPath(); g.arc(cx, cy, ra, a0, a1); g.arc(cx, cy, rb, a1, a0, true); g.closePath(); g.stroke();
-        if (v / tot > (J && rb < R0 * .9 ? .09 : .05)) { var am = (a0 + a1) / 2, rr = (ra + rb) / 2; g.fillStyle = i >= (J ? 5 : 4) ? '#5c1530' : '#fff'; g.font = 'bold ' + Math.round((J && rb < R0 * .9 ? 9 : 12) * K) + 'px Poppins, system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(J ? tfmt(v).replace(' ', '') : v, cx + Math.cos(am) * rr, cy + Math.sin(am) * rr); }
-        a0 = a1;
-      });
-    }
-    ring(all, R1, R0, false); ring(inn, R2, R3, true);
-    g.fillStyle = '#ad1457'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = 'bold ' + Math.round(22 * K) + 'px Poppins, system-ui'; g.fillText(J ? tfmt(sum) : (L.length ? fmt1(sum / L.length) : '–'), cx, cy - 6 * K);
-    g.fillStyle = '#8a6573'; g.font = Math.round(10 * K) + 'px Poppins, system-ui'; g.fillText(J ? 'à réviser' : 'moy. sur 5', cx, cy + 12 * K);
-    
-  }
-  /* courbe de l'oubli : note obtenue à chaque révision selon le nombre de jours écoulés depuis la précédente */
-  function oubliPts() {
-    var P = [], lim = TODAY() - 100; (data.hist || []).forEach(function (h) {
-      if (!h.avant || !h.avant.evalue || !h.jour || dnum(h.jour) < lim || (h.avant.succes || 0) < (data.reglages.oubliMin === 0 ? 0 : 3)) return; var g = dnum(h.jour) - dnum(h.avant.evalue);
-      if (g >= 0 && g <= 100 && typeof h.niveau === 'number') P.push({ g: g, n: Math.min(5, h.niveau) });
-    }); return P;
-  }
-  function drawOubli(cv) {
-    var P = oubliPts(), w = cv.clientWidth || 320, h = Math.round(Math.min(Math.max(220, w * 0.55), 340)), dpr = window.devicePixelRatio || 1;
-    cv.width = w * dpr; cv.height = h * dpr; cv.style.height = h + 'px';
-    var g = cv.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, w, h); g.globalAlpha = ANIM;
-    var L0 = 30, R0 = w - 10, T = 14, B = h - 26;
-    function X(d) { return L0 + (R0 - L0) * d / 100; } function Y(v) { return B - (B - T) * v / 5; }
-    g.font = '10px Poppins, system-ui'; g.textAlign = 'right'; g.fillStyle = '#8a6573'; g.strokeStyle = '#f0dde4'; g.lineWidth = 1;
-    for (var v = 0; v <= 5; v++) { g.beginPath(); g.moveTo(L0, Y(v)); g.lineTo(R0, Y(v)); g.stroke(); g.fillText(v, L0 - 5, Y(v) + 3); }
-    g.textAlign = 'center'; [0, 10, 25, 50, 75, 100].forEach(function (d) { g.fillText(d + ' j', X(d), B + 15); });
-    g.fillStyle = 'rgba(249,211,224,.55)'; g.fillRect(L0, Y(5), R0 - L0, Y(4.5) - Y(5));
-    /* J idéaux */
-    var iv = data.reglages.intervalles.slice(0, 6); g.setLineDash([3, 3]); g.strokeStyle = '#e0a3b8'; iv.forEach(function (d) { if (d <= 100) { g.beginPath(); g.moveTo(X(d), T); g.lineTo(X(d), B); g.stroke(); g.fillStyle = '#b55a7c'; g.fillText('J' + d, X(d), T - 3); } }); g.setLineDash([]);
-    if (!P.length) { g.fillStyle = '#8a6573'; g.font = '13px Poppins, system-ui'; g.textAlign = 'center'; g.fillText('Pas encore de mesure', w / 2, (T + B) / 2); return; }
-    P.forEach(function (p) { g.fillStyle = 'rgba(224,82,127,.28)'; g.beginPath(); g.arc(X(p.g), Y(p.n), 3, 0, 7); g.fill(); });
-    var lastBx = -99;
-    iv.forEach(function (d) {
-      if (d > 100) return; var tol = Math.max(1, Math.round(d * 0.2)), q = P.filter(function (p) { return Math.abs(p.g - d) <= tol; });
-      if (!q.length) return; var m = q.reduce(function (a, p) { return a + p.n; }, 0) / q.length, bx = Math.min(R0 - 16, Math.max(L0 + 16, X(d))), by = B - 12; if (bx - lastBx < 34) by -= 22; lastBx = bx;
-      g.fillStyle = scale(m); g.beginPath(); if (g.roundRect) g.roundRect(bx - 16, by - 9, 32, 18, 9); else g.rect(bx - 16, by - 9, 32, 18); g.fill();
-      g.fillStyle = m < 3.2 ? '#fff' : '#5c1530'; g.font = 'bold 11px Poppins, system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(fmt1(Math.round(m * 10) / 10), bx, by); g.textBaseline = 'alphabetic';
-    });
-    /* moyenne lissée : chaque jour de 0 à 100 = moyenne pondérée des révisions voisines (noyau gaussien) */
-    var pts = [], sg = 7;
-    for (var d = 0; d <= 100; d += 1) {
-      var sw = 0, sv = 0; P.forEach(function (p) { var z = (p.g - d) / sg, wgt = Math.exp(-z * z / 2); sw += wgt; sv += wgt * p.n; });
-      if (sw >= 1.2) pts.push({ x: d, y: sv / sw });
-    }
-    if (pts.length > 1) {
-      g.beginPath(); pts.forEach(function (p, i) { if (i) g.lineTo(X(p.x), Y(p.y)); else g.moveTo(X(p.x), Y(p.y)); });
-      g.lineTo(X(pts[pts.length - 1].x), B); g.lineTo(X(pts[0].x), B); g.closePath(); var topY = B; pts.forEach(function (p) { topY = Math.min(topY, Y(p.y)); }); var gr = g.createLinearGradient(0, topY, 0, B); gr.addColorStop(0, 'rgba(248,83,139,.55)'); gr.addColorStop(.6, 'rgba(248,83,139,.18)'); gr.addColorStop(1, 'rgba(248,83,139,0)'); g.fillStyle = gr; g.fill();
-      g.strokeStyle = '#ad1457'; g.lineWidth = 3; g.lineJoin = 'round'; g.lineCap = 'round'; g.beginPath(); pts.forEach(function (p, i) { if (i) g.lineTo(X(p.x), Y(p.y)); else g.moveTo(X(p.x), Y(p.y)); }); g.stroke();
-    }
-  }
-  /* note attendue (0-5) après `gap` jours, d'après la courbe de l'oubli lissée ; null si pas assez de données */
-  function retentionFn() {
-    var P = oubliPts(); if (P.length < 30) return null;
-    return function (gap) {
-      var sw = 0, sv = 0; P.forEach(function (p) { var z = (p.g - gap) / 7, wg = Math.exp(-z * z / 2); sw += wg; sv += wg * p.n; });
-      return sw >= 1.2 ? sv / sw : null;
-    };
-  }
-  function drawCharge(cv, L, t, ax) {
-    var N = 42, late = [], lateEx = [], ex = [], nm = [], pv = [], pvL = [], pvE = [], pvLE = [], cnt = []; for (var i = 0; i < N; i++) { late.push(0); lateEx.push(0); ex.push(0); nm.push(0); pv.push(0); pvL.push(0); pvE.push(0); pvLE.push(0); cnt.push(0); }
-    var RETREAL = data.reglages.prevOff ? null : retentionFn(), RET = data.reglages.prevOff ? null : (RETREAL || function () { return 5; }), vc = 0;
-    var cand = [];
-    data.ex.forEach(function (x, i) { if (visible(x) && x.evalue) cand.push({ x: x, r: revision(x), ex: modeExam(x), i: i, m: mins(x) }); });
-    function lvO(o) { return o.v ? o.L : lvl(o.x); }
-    function srt() { cand.sort(function (a, b) { return ((a.ex ? 0 : 1) * 1e11 + a.r * 1e5 + lvO(a) * 1e4 + (a.v ? 5e3 : 0) + (a.i + '' === a.i ? 0 : a.i)) - ((b.ex ? 0 : 1) * 1e11 + b.r * 1e5 + lvO(b) * 1e4 + (b.v ? 5e3 : 0) + (b.i + '' === b.i ? 0 : b.i)); }); }
-    srt();
-    var done = {};
-    for (var d = 0; d < N; d++) {
-      var wd = new Date((t + d) * DAY).getUTCDay(), bud = data.reglages.planning[(wd + 6) % 7];
-      bud = typeof bud === 'number' && !isNaN(bud) ? bud : 1e9;
-      var cum = 0, fait = d === 0 ? dejaFait() : 0; if (RET && d > 0) srt();
-      cand.forEach(function (o) {
-        if (done[o.i] || o.r >= t + d + 1) return;
-        if (d === 0 && o.x && o.x.reporte === todayISO()) return;
-        var effB = bud, effF = fait; if (bud >= 1e9 && d === 0) { effB = minutesRestantes(); effF = 0; }
-        if (effB >= 1e9 || cum + o.m <= effB - effF || (cum === 0 && effB > effF)) {
-          cum += o.m;
-          done[o.i] = 1; if (!o.v) cnt[d]++;
-          if (RET) {
-            var ox = o.v ? o.x : o.x, gp = t + d - (o.v ? o.ev : dnum(o.x.evalue)), nt = gp >= 0 ? RET(gp) : null;
-            if (nt !== null) {
-              var pl = o.v ? o.L : lvl(o.x), nl = Math.min(5, Math.round(nt)); if (!RETREAL) nl = pl + 1; else if (nl >= 5 && pl >= 5) nl = pl + 1;
-              var r2 = Math.max(revisionAt(ox, t + d, interval(nl)), t + d + 1); if (r2 < t + N) cand.push({ v: true, x: ox, L: nl, ev: t + d, r: r2, ex: examAt(ox, t + d), i: 'v' + (vc++), m: o.m });
-            }
-          }
-          if (o.v) { if (o.r < t + d) { if (o.ex) pvLE[d] += o.m; else pvL[d] += o.m; } else if (o.ex) pvE[d] += o.m; else pv[d] += o.m; } else if (o.r < t + d) { if (o.ex) lateEx[d] += o.m; else late[d] += o.m; } else if (o.ex) ex[d] += o.m; else nm[d] += o.m;
-        }
-      });
-    }
-    var w = 4 + N * 40 + 4, h = 210, dpr = window.devicePixelRatio || 1;
-    cv.width = w * dpr; cv.height = h * dpr; cv.style.height = h + 'px'; cv.style.width = w + 'px';
-    var g = cv.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, w, h);
-    var tot = late.map(function (_, i) { return late[i] + lateEx[i] + ex[i] + nm[i] + pv[i] + pvL[i] + pvE[i] + pvLE[i]; }), mx = Math.max.apply(null, tot.concat([60]));
-    var step = mx > 600 ? 240 : mx > 240 ? 120 : 60; mx = Math.ceil(mx / step) * step;
-    var L0 = 4, B = h - 46, T = 8, bw = (w - L0 - 4) / N;
-    function rr(x, y, w2, h2, r) { g.beginPath(); if (g.roundRect) g.roundRect(x, y, w2, h2, r); else g.rect(x, y, w2, h2); }
-    /* fond des colonnes : aujourd'hui en rose pâle, week-ends très léger */
-    for (var j0 = 0; j0 < N; j0++) {
-      var wd0 = new Date((t + j0) * DAY).getUTCDay(), bx = L0 + j0 * bw + 1;
-      if (j0 === 0) { g.fillStyle = '#fde6ee'; rr(bx, T - 2, bw - 2, B - T + 44, 8); g.fill(); }
-      else if (wd0 === 0 || wd0 === 6) { g.fillStyle = '#fdf3f6'; rr(bx, T - 2, bw - 2, B - T + 44, 8); g.fill(); }
-    }
-    g.font = '10px Poppins, system-ui'; g.fillStyle = '#a58593'; g.strokeStyle = '#f1dde5'; g.textAlign = 'right'; g.lineWidth = 1; g.setLineDash([2, 4]);
-    var ga = null; if (ax) { ax.width = 34 * dpr; ax.height = h * dpr; ax.style.width = '34px'; ax.style.height = h + 'px'; ga = ax.getContext('2d'); ga.scale(dpr, dpr); ga.clearRect(0, 0, 34, h); ga.font = '10px Poppins, system-ui'; ga.fillStyle = '#a58593'; ga.textAlign = 'right'; }
-    for (var v = 0; v <= mx; v += step) { var y = B - (B - T) * v / mx; g.beginPath(); g.moveTo(L0, y); g.lineTo(w, y); g.stroke(); if (ax) { ga.fillText(v >= 60 ? (v / 60) + ' h' : v + ' min', 30, y + 3); } }
-    g.setLineDash([]); g.textAlign = 'center';
-    for (var j = 0; j < N; j++) {
-      var x0 = L0 + j * bw + bw * 0.16, ww = bw * 0.68, yy = B, th = (B - T) * tot[j] / mx * ANIM;
-      if (th > 0) {
-        g.save(); rr(x0, B - th, ww, th + 6, Math.min(6, ww / 2)); g.clip();
-        [[late[j], C_LATE, 0], [lateEx[j], C_LATE, 1], [nm[j], C_NORM, 0], [ex[j], C_NORM, 1], [pvL[j], C_PVL, 0], [pvLE[j], C_PVL, 2], [pvE[j], C_PV, 2], [pv[j], C_PV, 0]].forEach(function (s) {
-          if (!s[0]) return; var hh = (B - T) * s[0] / mx * ANIM; g.fillStyle = s[1]; g.fillRect(x0, yy - hh, ww, hh);
-          if (s[2]) { g.save(); g.beginPath(); g.rect(x0, yy - hh, ww, hh); g.clip(); waves(g, x0, yy - hh, ww, hh, s[2] === 2 ? '#e1e1e1' : '#f9d3e0', 5, 1.6, 1.2); g.restore(); }
-          g.fillStyle = 'rgba(255,255,255,.7)'; g.fillRect(x0, yy - hh, ww, 1);
-          yy -= hh;
-        });
-        g.restore();
-      }
-      var bj = data.reglages.planning[(new Date((t + j) * DAY).getUTCDay() + 6) % 7];
-      if (typeof bj === 'number' && !isNaN(bj) && bj <= mx) { var by2 = B - (B - T) * bj / mx; g.strokeStyle = 'rgba(92,21,48,.55)'; g.lineWidth = 2; g.beginPath(); g.moveTo(x0 - 3, by2); g.lineTo(x0 + ww + 3, by2); g.stroke(); }
-      var dd = new Date((t + j) * DAY), cx = L0 + j * bw + bw / 2; g.textAlign = 'center';
-      g.fillStyle = j === 0 ? '#ad1457' : '#a58593'; g.font = (j === 0 ? 'bold ' : '') + '8px Poppins, system-ui'; g.fillText((j === 0 ? 'AUJ.' : JS[dd.getUTCDay()]).toUpperCase(), cx, B + 12);
-      g.fillStyle = '#5c1530'; g.font = 'bold 10px Poppins, system-ui'; g.fillText(String(dd.getUTCDate()), cx, B + 24);
-      g.fillStyle = '#b79aa7'; g.font = '8px Poppins, system-ui'; g.fillText(cnt[j] + ' ex.', cx, B + 35);
-    }
-  }
-
-  /* ---------- vue : réglages ---------- */
-  function numInput(val, cb, w) {
-    var i = document.createElement('input'); i.type = 'number'; i.inputMode = 'numeric'; i.value = val === null || val === undefined || isNaN(val) ? '' : val;
-    if (w) i.style.width = w; i.addEventListener('change', function () { cb(i.value === '' ? null : +i.value); save(); toast('Réglage enregistré.'); }); return i;
-  }
-  var SET_IC = {
-    cal: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/>',
-    flag: '<path d="M5 21V4M5 4h12l-2 4 2 4H5"/>',
-    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'
-  };
-  function setCard(title, ic) {
-    var c = el('div', 'scard'), h = el('div', 'sh'), ico = el('span', 'sico'); ico.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">' + SET_IC[ic] + '</svg>';
-    h.appendChild(ico); h.appendChild(el('h2', '', title)); c.appendChild(h); return c;
-  }
-  function setRow(card, label, val, cb, unit, badge) {
-    var r = el('label', 'srow'), l = el('span', 'sl');
-    if (badge !== undefined) { var bd = el('i', 'sbadge', String(badge)); bd.style.background = scale(badge); bd.style.color = badge < 3.2 ? '#fff' : '#5c1530'; l.appendChild(bd); }
-    l.appendChild(el('span', '', label)); r.appendChild(l);
-    var f = el('span', 'sf'); f.appendChild(numInput(val, cb)); f.appendChild(el('em', '', unit)); r.appendChild(f); card.appendChild(r);
-  }
-  function renderSet() {
-    var box = $('v-set'); box.textContent = ''; var R = data.reglages;
-    var c1 = setCard('Intervalles de révision', 'cal');
-    for (var n = 0; n < 6; n++) (function (n) {
-      setRow(c1, NIV[n] + ' : prochaine révision dans', R.intervalles[n], function (v) { R.intervalles[n] = v === null ? 0 : v; }, 'jours', n);
-    })(n);
-    setRow(c1, 'Après un 5 : chaque 5 de plus d’affilée (note 6 = 2 fois 5 de suite, note 7 = 3 fois…) repousse la révision de', R.pasApres5, function (v) { R.pasApres5 = v === null ? 0 : v; }, 'jours');
-    box.appendChild(c1);
-
-    var cT = setCard('Thème', 'cal'), sw = el('div', 'seg'), cur = themeDeg();
-    THEMES.forEach(function (t) {
-      var b = el('button', cur[0] === t[0] ? 'on' : '', t[0]); b.type = 'button';
-      var dot = el('i', 'tdot'); dot.style.filter = 'hue-rotate(' + (t[1] - cur[1]) + 'deg)'; b.insertBefore(dot, b.firstChild);
-      b.addEventListener('click', function () { try { localStorage.setItem('mes-exercices-theme', t[0]); } catch (e) { /* ignoré */ } applyTheme(); render(); });
-      sw.appendChild(b);
-    });
-    cT.appendChild(sw); box.appendChild(cT);
-
-    var c2 = setCard('Mode examen', 'flag');
-    [['Début du mode examen : jours avant l’examen', 'debutExam', 'jours'], ['Butoire : seuil — un exo fait plus de … jours avant l’examen est « tôt », sinon « tard »', 'seuilButoire', 'jours'], ['Butoire si fait tôt : ne plus réviser … jours avant l’examen', 'butoireSi', 'jours'], ['Butoire sinon (fait tard) : ne plus réviser … jours avant l’examen (0 ou 1 = jusqu’à la veille de l’examen)', 'butoireSinon', 'jours'], ['Minutes comptées par exo sans durée', 'minutesDefaut', 'min']].forEach(function (a) {
-      setRow(c2, a[0], R[a[1]], function (v) { R[a[1]] = v === null ? 0 : v; }, a[2]);
-    });
-    box.appendChild(c2);
-
-    var c3 = setCard('Planning de la semaine (minutes)', 'clock'), wk = el('div', 'week');
-    JOURS.forEach(function (j, i) {
-      var d = el('label', 'wday'); d.appendChild(el('b', '', j)); d.appendChild(numInput(R.planning[i], function (v) { R.planning[i] = v; })); d.appendChild(el('em', '', 'min')); wk.appendChild(d);
-    });
-    c3.appendChild(wk); box.appendChild(c3);
-  }
-
-  /* ---------- édition d'un exercice ---------- */
-  function fillSem(sel) {
-    $('fSem').textContent = ''; semestres().forEach(function (s) { var o = el('option', '', s); o.value = s; $('fSem').appendChild(o); });
-    if (sel) $('fSem').value = sel; fillMat();
-  }
-  function fillMat(sel) {
-    $('fMat').textContent = ''; data.mats.forEach(function (m) { if (m.semestre === $('fSem').value) { var o = el('option', '', m.nom); o.value = m.nom; $('fMat').appendChild(o); } });
-    if (sel) $('fMat').value = sel;
-  }
-  function openEditor(id) {
-    if (!data.mats.length) { toast('Ajoute d’abord une matière (onglet Matières).'); return; }
-    editingId = id; var x = id ? data.ex.filter(function (e) { return e.id === id; })[0] : null;
-    $('editorTitle').textContent = x ? 'Modifier l’exercice' : 'Nouvel exercice';
-    $('fSucces').textContent = ''; NIV.forEach(function (n, i) { var o = el('option', '', i + ' · ' + n); o.value = i; $('fSucces').appendChild(o); });
-    fillSem(x ? x.semestre : (data.reglages.semestres[0] || null)); if (x) fillMat(x.matiere);
-    $('fTitre').value = x ? x.intitule || '' : ''; $('fSucces').value = x ? x.succes : 3;
-    $('fDate').value = x ? x.evalue : todayISO(); $('fMin').value = x && x.minutes ? x.minutes : ''; $('fNote').value = x && x.note ? x.note : '';
-    $('delBtn').hidden = !x; $('editor').showModal();
-  }
-  function saveEditor(ev) {
-    ev.preventDefault();
-    var o = { intitule: $('fTitre').value.trim(), succes: +$('fSucces').value, semestre: $('fSem').value, matiere: $('fMat').value, minutes: $('fMin').value ? +$('fMin').value : null, evalue: $('fDate').value, note: $('fNote').value.trim() };
-    if (!o.matiere || !o.evalue) { toast('Choisis une matière et une date.'); return; }
-    if (editingId) { data.ex.forEach(function (x) { if (x.id === editingId) { if (x.succes !== o.succes) x.p5 = 0; Object.assign(x, o); } }); }
-    else { o.id = newId(); data.ex.push(o); }
-    save(); $('editor').close(); render(); toast('Exercice enregistré.');
-  }
-  function openDone(id) {
-    doingId = id; var x = data.ex.filter(function (e) { return e.id === id; })[0]; if (!x) return;
-    $('doneTitle').textContent = x.matiere + (x.intitule ? ' · ' + x.intitule : '');
-    $('doneTxt').textContent = ''; $('doneMin').value = mins(x); var chk = chGetAll()[id]; if (chk && chMs(chk) >= 30000) { $('doneMin').value = Math.max(1, Math.round(chMs(chk) / 60000)); $('doneTxt').textContent = 'Temps repris de ton chrono : ' + chFmt(chMs(chk)) + '.'; }
-    var b = $('doneBtns'); b.textContent = '';
-    NIV.forEach(function (n, i) {
-      var bt = el('button', '', String(i)); bt.type = 'button'; bt.appendChild(el('small', '', n));
-      bt.addEventListener('click', function () { var ca = chGetAll(); delete ca[x.id]; chSetAll(ca); addHist(x, i); x.succes = i; if (i < 5) x.p5 = 0; x.evalue = todayISO(); save(); $('doneDlg').close(); render(); toast('Prochaine révision : ' + fromNum(revision(x))); });
-      b.appendChild(bt);
-    });
-    $('doneDlg').showModal();
-  }
-
-
-  /* ---------- import de ton tableur (Excel .xlsx ou CSV) ---------- */
-  function u16(b, o) { return b[o] | (b[o + 1] << 8); }
-  function u32(b, o) { return (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0; }
-  function inflateRaw(bytes) {
-    var ds = new DecompressionStream('deflate-raw'), w = ds.writable.getWriter();
-    w.write(bytes); w.close();
-    return new Response(ds.readable).arrayBuffer().then(function (b) { return new Uint8Array(b); });
-  }
-  function readZip(buf) {
-    var b = new Uint8Array(buf), e = b.length - 22;
-    while (e >= 0 && u32(b, e) !== 0x06054b50) e--;
-    if (e < 0) throw new Error('zip');
-    var n = u16(b, e + 10), p = u32(b, e + 16), files = {};
-    for (var i = 0; i < n; i++) {
-      var method = u16(b, p + 10), csize = u32(b, p + 20), nl = u16(b, p + 28), xl = u16(b, p + 30), cl = u16(b, p + 32), lo = u32(b, p + 42);
-      var name = new TextDecoder().decode(b.subarray(p + 46, p + 46 + nl));
-      var ds = lo + 30 + u16(b, lo + 26) + u16(b, lo + 28);
-      files[name] = { method: method, data: b.subarray(ds, ds + csize) };
-      p += 46 + nl + xl + cl;
-    }
-    return files;
-  }
-  function zipText(files, name) {
-    var f = files[name]; if (!f) return Promise.resolve(null);
-    var p = f.method === 0 ? Promise.resolve(f.data) : inflateRaw(f.data);
-    return p.then(function (u) { return new TextDecoder().decode(u); });
-  }
-  function colNum(ref) { var m = /^([A-Z]+)(\d+)$/.exec(ref), c = 0; for (var i = 0; i < m[1].length; i++) c = c * 26 + m[1].charCodeAt(i) - 64; return [c, +m[2]]; }
-  function parseSheet(xml, shared) {
-    var doc = new DOMParser().parseFromString(xml, 'application/xml'), cells = {}, cs = doc.getElementsByTagName('c');
-    for (var i = 0; i < cs.length; i++) {
-      var c = cs[i], t = c.getAttribute('t'), v = c.getElementsByTagName('v')[0], val = null;
-      if (t === 'inlineStr') { val = c.textContent; }
-      else if (v) { val = v.textContent; if (t === 's') val = shared[+val]; else if (t === 'str' || t === 'e') { /* texte */ } else if (t === 'b') val = val === '1'; else val = +val; }
-      if (val === null || val === '') continue;
-      var rc = colNum(c.getAttribute('r')); cells[rc[1] + ',' + rc[0]] = val;
-    }
-    return cells;
-  }
-  function readXlsx(buf) {
-    var files = readZip(buf), sheets = {};
-    return Promise.all([zipText(files, 'xl/workbook.xml'), zipText(files, 'xl/_rels/workbook.xml.rels'), zipText(files, 'xl/sharedStrings.xml')]).then(function (a) {
-      var shared = [];
-      if (a[2]) { var sd = new DOMParser().parseFromString(a[2], 'application/xml'), sis = sd.getElementsByTagName('si'); for (var i = 0; i < sis.length; i++) shared.push(sis[i].textContent); }
-      var rels = {}, rd = new DOMParser().parseFromString(a[1], 'application/xml').getElementsByTagName('Relationship');
-      for (var j = 0; j < rd.length; j++) rels[rd[j].getAttribute('Id')] = rd[j].getAttribute('Target');
-      var sh = new DOMParser().parseFromString(a[0], 'application/xml').getElementsByTagName('sheet'), jobs = [];
-      for (var k = 0; k < sh.length; k++) (function (el0) {
-        var t = rels[el0.getAttribute('r:id')] || rels[el0.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id')];
-        if (!t) return; t = t.replace(/^\//, ''); if (t.indexOf('xl/') !== 0) t = 'xl/' + t;
-        jobs.push(zipText(files, t).then(function (x) { if (x) sheets[el0.getAttribute('name')] = parseSheet(x, shared); }));
-      })(sh[k]);
-      return Promise.all(jobs);
-    }).then(function () { return sheets; });
-  }
-  function toISO(v) {
-    if (typeof v === 'number' && v > 20000) { var d = new Date(Math.round((v - 25569) * DAY)); return d.getUTCFullYear() + '-' + ('0' + (d.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + d.getUTCDate()).slice(-2); }
-    if (typeof v === 'string') {
-      var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v.trim()); if (m) return m[1] + '-' + m[2] + '-' + m[3];
-      m = /^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/.exec(v.trim());
-      if (m) { var y = +m[3]; if (y < 100) y += 2000; return y + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2); }
-    }
-    return null;
-  }
-  function parseCsv(txt) {
-    var sep = (txt.split(';').length > txt.split(',').length) ? ';' : ',', rows = [], row = [], cur = '', q = false;
-    for (var i = 0; i < txt.length; i++) {
-      var ch = txt[i];
-      if (q) { if (ch === '"') { if (txt[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; }
-      else if (ch === '"') q = true; else if (ch === sep) { row.push(cur); cur = ''; }
-      else if (ch === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; } else if (ch !== '\r') cur += ch;
-    }
-    row.push(cur); rows.push(row);
-    var cells = {}; rows.forEach(function (r, ri) { r.forEach(function (v, ci) { v = v.trim(); if (v === '') return; cells[(ri + 1) + ',' + (ci + 1)] = isNaN(+v.replace(',', '.')) || /[\/-]/.test(v) ? v : +v.replace(',', '.'); }); });
-    return { 'Table exercice': cells };
-  }
-  function importSheets(sh) {
-    var keys = Object.keys(sh), tn = keys.filter(function (k) { return norm(k).indexOf('exercice') >= 0; })[0] || keys[0];
-    var T = sh[tn], out = { ex: [], mats: [], reglages: JSON.parse(JSON.stringify(data.reglages)) };
-    var hr = 0, cols = {};
-    for (var r = 1; r <= 30 && !hr; r++) {
-      var hs = {}; for (var c = 1; c <= 30; c++) { var v = T[r + ',' + c]; if (typeof v === 'string') hs[norm(v)] = c; }
-      if (hs['succes'] && hs['matiere']) { hr = r; cols = hs; }
-    }
-    if (!hr) throw new Error('entetes');
-    var cT = cols['intitule'], cS = cols['succes'], cSem = cols['semestre'], cM = cols['matiere'], cD = cols['temps'], cE = cols['evalue le'] || cols['evalue'];
-    var seen = {};
-    for (var rr = hr + 1; rr < hr + 5000; rr++) {
-      var sem = T[rr + ',' + cSem], mat = T[rr + ',' + cM], suc = T[rr + ',' + cS];
-      if (!sem && !mat && rr > hr + 800 && !suc) break;
-      var ev = toISO(T[rr + ',' + cE]);
-      if (!sem || !mat || typeof suc !== 'number' || !ev) continue;
-      var ti = cT ? T[rr + ',' + cT] : '', mn = cD ? T[rr + ',' + cD] : null;
-      out.ex.push({ id: newId() + rr, intitule: ti !== undefined && ti !== null ? String(ti) : '', succes: Math.max(0, Math.min(5, Math.round(suc))), p5: Math.round(suc) >= 5 ? Math.min(7, Math.round(suc) - 4) : 0, semestre: String(sem), matiere: String(mat), minutes: typeof mn === 'number' && mn > 0 ? mn : null, evalue: ev });
-      seen[sem + '|' + mat] = [String(sem), String(mat)];
-    }
-    var pn = keys.filter(function (k) { return norm(k).indexOf('param') >= 0; })[0], P = pn ? sh[pn] : null, ex = {};
-    if (P) {
-      Object.keys(P).forEach(function (k) {
-        var rc = k.split(',').map(Number), v = P[k];
-        if (v === 'Date de contrôle' || norm(v) === 'date de controle') {
-          var sem2 = P[rc[0] + ',' + (rc[1] - 1)]; if (typeof sem2 !== 'string') return;
-          for (var q = rc[0] + 1; q < rc[0] + 200; q++) { var nm = P[q + ',' + (rc[1] - 1)]; if (nm === undefined) break; var nt = P[q + ',' + (rc[1] + 1)]; out.mats.push({ semestre: sem2, nom: String(nm), examen: toISO(P[q + ',' + rc[1]]), note: typeof nt === 'number' ? nt : null }); ex[sem2 + '|' + nm] = 1; }
-        }
-        if (typeof v === 'string') {
-          var nv = norm(v), R = out.reglages;
-          function right() { for (var cc = rc[1] + 1; cc < rc[1] + 8; cc++) if (typeof P[rc[0] + ',' + cc] === 'number') return P[rc[0] + ',' + cc]; return undefined; }
-          var val;
-          if (nv.indexOf('minutes comptees') === 0 && (val = right()) !== undefined) R.minutesDefaut = val;
-          else if (nv.indexOf('debut du mode exam') === 0 && (val = right()) !== undefined) R.debutExam = val;
-          else if (nv.indexOf('butoire : seuil') === 0 && (val = right()) !== undefined) R.seuilButoire = val;
-          else if (nv.indexOf('butoire sinon') === 0 && (val = right()) !== undefined) R.butoireSinon = val;
-          else if (nv.indexOf('butoire si ') === 0 && (val = right()) !== undefined) R.butoireSi = val;
-          else if (nv === 'intervalles') { for (var n = 0; n < 12; n++) { var iv = P[(rc[0] + 1 + n) + ',' + rc[1]]; if (typeof iv === 'number') R.intervalles[n] = iv; } }
-          else if (v === 'Lun' && P[rc[0] + ',' + (rc[1] + 1)] === 'Mar') { for (var j = 0; j < 7; j++) { var pv = P[(rc[0] + 1) + ',' + (rc[1] + j)]; R.planning[j] = typeof pv === 'number' ? pv : null; } }
-        }
-      });
-    }
-    out.ues = [];
-    var un = keys.filter(function (k) { var n = norm(k); return n === 'ue' || n === 'ues'; })[0];
-    if (un) {
-      var U = sh[un], hh = {}, hrow = 0;
-      for (var ur = 1; ur <= 10 && !hrow; ur++) { hh = {}; for (var uc = 1; uc <= 10; uc++) { var uv = U[ur + ',' + uc]; if (typeof uv === 'string') hh[norm(uv)] = uc; } if (hh['semestre'] && hh['ue']) hrow = ur; }
-      if (hrow) for (var u2 = hrow + 1; u2 < hrow + 500; u2++) {
-        var us = U[u2 + ',' + hh['semestre']], un2 = U[u2 + ',' + hh['ue']], um = U[u2 + ',' + (hh['moyenne /20'] || hh['moyenne'])];
-        if (!us || !un2) { if (u2 > hrow + 60 && !us && !un2) break; continue; }
-        out.ues.push({ semestre: String(us), nom: String(un2), moy: typeof um === 'number' ? um : null });
-      }
-    }
-    Object.keys(seen).forEach(function (k) { if (!ex[k]) out.mats.push({ semestre: seen[k][0], nom: seen[k][1], examen: null }); });
-    return out;
-  }
-  /* ---------- anciennes versions : on garde les 10 dernières ---------- */
-  var VKEY = 'mes-exercices-versions', VMAX = 10;
-  function versions() { try { var v = JSON.parse(localStorage.getItem(VKEY) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
-  function addVersion(label) {
-    if (!data || !data.ex || !data.ex.length) return;
-    var v = versions(), js = JSON.stringify(data);
-    if (v.length && JSON.stringify(v[0].data) === js) return;
-    v.unshift({ ts: Date.now(), label: label, data: JSON.parse(js) }); v = v.slice(0, VMAX);
-    while (v.length) { try { localStorage.setItem(VKEY, JSON.stringify(v)); break; } catch (e) { v.pop(); } }
-    versLabel();
-  }
-  function versLabel() { var b = $('versBtn'); if (b) b.textContent = 'Restaurer une ancienne sauvegarde (' + versions().length + ')'; }
-  function fmtTs(t) { var d = new Date(t); return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) + ' à ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); }
-  function openVersions() {
-    var box = $('versList'); box.textContent = ''; var v = versions();
-    if (syncUrl()) { var h0 = el('h3', '', 'Sur cet appareil'); h0.style.cssText = 'margin:4px 0 6px;color:var(--bord);font-size:.95rem'; box.appendChild(h0); }
-    if (!v.length) box.appendChild(el('p', 'muted', 'Pas encore d’ancienne version. Elles se créent avant chaque import, chaque restauration, chaque mise à jour depuis le Drive, et une fois par jour.'));
-    v.forEach(function (o) {
-      var c = el('div', 'card'), t = el('div'); t.appendChild(el('b', '', fmtTs(o.ts))); t.appendChild(el('div', 'muted', o.label + ' · ' + o.data.ex.length + ' exercices'));
-      var r = el('button', 'plain', 'Revenir à cette version'); r.type = 'button'; r.style.marginTop = '8px';
-      r.addEventListener('click', function () { addVersion('Avant retour en arrière'); data = fix(JSON.parse(JSON.stringify(o.data))); save(); $('versDlg').close(); render(); toast('Version du ' + fmtTs(o.ts) + ' rétablie.'); });
-      c.appendChild(t); c.appendChild(r); box.appendChild(c);
-    });
-    var u = syncUrl();
-    if (u) {
-      var h = el('h3', '', 'Sur ton Drive'); h.style.cssText = 'margin:14px 0 6px;color:var(--bord);font-size:.95rem'; box.appendChild(h);
-      var st = el('p', 'muted', 'Chargement…'); box.appendChild(st);
-      fetch(u + (u.indexOf('?') < 0 ? '?' : '&') + 'liste=1&t=' + Date.now()).then(function (r) { return r.json(); }).then(function (l) {
-        if (!Array.isArray(l)) throw new Error('x');
-        if (!l.length) { st.textContent = 'Aucune sauvegarde sur le Drive pour l’instant (la première se crée à la prochaine synchronisation).'; return; }
-        st.remove();
-        l.forEach(function (o) {
-          var c = el('div', 'card'), t = el('div'); t.appendChild(el('b', '', fmtTs(o.ts))); t.appendChild(el('div', 'muted', 'Sauvegarde du Drive'));
-          var r = el('button', 'plain', 'Revenir à cette version'); r.type = 'button'; r.style.marginTop = '8px';
-          r.addEventListener('click', function () {
-            r.textContent = 'Chargement…';
-            fetch(u + (u.indexOf('?') < 0 ? '?' : '&') + 'version=' + encodeURIComponent(o.id) + '&t=' + Date.now()).then(function (x) { return x.json(); }).then(function (j) {
-              if (!j || !j.data) throw new Error('x');
-              addVersion('Avant retour à une version du Drive'); data = fix(j.data); save(); $('versDlg').close(); render(); toast('Version du Drive du ' + fmtTs(o.ts) + ' rétablie.');
-            }).catch(function () { r.textContent = 'Revenir à cette version'; toast('Impossible de charger cette version.'); });
-          });
-          c.appendChild(t); c.appendChild(r); box.appendChild(c);
-        });
-      }).catch(function () { st.textContent = 'Pas de réponse du Drive. Si tu viens de changer le script, vérifie qu’il est bien en version 2 (voir les étapes).'; });
-    }
-    $('menu').close(); $('versDlg').showModal();
-  }
-  function importSheetFile(f) {
-    var isCsv = /\.csv$/i.test(f.name), r = new FileReader();
-    r.onerror = function () { toast('Impossible de lire ce fichier.'); };
-    r.onload = function () {
-      var p = isCsv ? Promise.resolve(parseCsv(new TextDecoder().decode(r.result))) : readXlsx(r.result);
-      p.then(importSheets).then(function (out) {
-        if (!out.ex.length) { toast('Aucun exercice trouvé : il faut les colonnes Succès, Semestre, Matière et Evalué le.'); return; }
-        if (data.ex.length && !window.confirm('Remplacer les ' + data.ex.length + ' exercices actuels par les ' + out.ex.length + ' du tableur ?')) return;
-        addVersion('Avant import Excel'); data = fix(out); save(); view = 'today'; render(); toast(out.ex.length + ' exercices importés. (Menu ⋮ : Anciennes versions pour revenir en arrière)');
-      }).catch(function () { toast('Ce fichier n’a pas le bon format (onglet « Table exercice » attendu).'); });
-    };
-    r.readAsArrayBuffer(f);
-  }
-
-  /* ---------- sauvegarde / synchro ---------- */
-  function exportFile() {
-    var blob = new Blob([JSON.stringify(data)], { type: 'application/json' }), a = document.createElement('a');
-    a.href = URL.createObjectURL(blob); a.download = 'mes-exercices-' + todayISO() + '.json'; document.body.appendChild(a); a.click();
-    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
-  }
-  function importBackup(f) {
-    var r = new FileReader();
-    r.onload = function () { try { var nd = fix(JSON.parse(r.result)); addVersion('Avant restauration'); data = nd; save(); render(); toast('Sauvegarde restaurée (' + data.ex.length + ' exercices). (Menu ⋮ : Anciennes versions pour revenir en arrière)'); } catch (e) { toast('Ce fichier n’est pas une sauvegarde valide.'); } };
-    r.readAsText(f);
-  }
-  var SYNC_KEY = 'mes-exercices-synchro-adresse';
-  function syncUrl() { try { return localStorage.getItem(SYNC_KEY) || ''; } catch (e) { return ''; } }
-  function askSyncUrl() {
-    var u = window.prompt('Colle ici l’adresse de ton application web Apps Script (elle finit par /exec) :', syncUrl()); if (u === null) return '';
-    u = u.trim(); try { localStorage.setItem(SYNC_KEY, u); } catch (e) { /* ignoré */ } return u;
-  }
-  var syncBusy = false, syncTimer = null;
-  /* fusion de deux sauvegardes : on garde tout ce qui existe d'un côté ou de l'autre */
-  function mergeData(A, B, aNewer) {
-    var base = JSON.parse(JSON.stringify(aNewer ? A : B)), oth = JSON.parse(JSON.stringify(aNewer ? B : A));
-    var ex = {}; (base.ex || []).forEach(function (x) { ex[x.id] = x; });
-    (oth.ex || []).forEach(function (x) {
-      var y = ex[x.id]; if (!y) { base.ex.push(x); return; }
-      if ((x.evalue || '') > (y.evalue || '')) { var k = base.ex.indexOf(y); base.ex[k] = x; }
-    });
-    var seen = {}; base.hist = base.hist || []; base.hist.forEach(function (h) { seen[h.id + '|' + h.ts] = 1; });
-    (oth.hist || []).forEach(function (h) { if (!seen[h.id + '|' + h.ts]) { seen[h.id + '|' + h.ts] = 1; base.hist.push(h); } });
-    base.hist.sort(function (a, b) { return a.ts - b.ts; });
-    var cs = {}; base.corbeille = base.corbeille || []; base.corbeille.forEach(function (c) { cs[c.ex.id + '|' + c.ts] = 1; });
-    (oth.corbeille || []).forEach(function (c) { if (c && c.ex && !cs[c.ex.id + '|' + c.ts]) { cs[c.ex.id + '|' + c.ts] = 1; base.corbeille.push(c); } });
-    base.ex = (base.ex || []).filter(function (x) { return !base.corbeille.some(function (c) { return c.ex.id === x.id; }); });
-    var mm = {}; (base.mats || []).forEach(function (m) { mm[m.semestre + '|' + m.nom] = m; });
-    (oth.mats || []).forEach(function (m) { var y = mm[m.semestre + '|' + m.nom]; if (!y) { base.mats.push(m); return; } Object.keys(m).forEach(function (k) { if ((y[k] === undefined || y[k] === '' || y[k] === null) && m[k] !== undefined) y[k] = m[k]; }); });
-    var uu = {}; base.ues = base.ues || []; base.ues.forEach(function (u) { uu[u.semestre + '|' + u.nom] = 1; });
-    (oth.ues || []).forEach(function (u) { if (!uu[u.semestre + '|' + u.nom]) base.ues.push(u); });
-    return base;
-  }
-  function syncLabel() {
-    var b = $('syncBtn'); if (!b) return; var t = 0; try { t = Number(localStorage.getItem(KEY + '-syncts') || 0); } catch (e) { /* ignoré */ }
-    b.textContent = 'Synchroniser avec mon Drive';
-    var sm = el('small', '', t ? 'Dernière sauvegarde : ' + new Date(t).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) + ' à ' + new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : 'Pas encore de sauvegarde'); sm.style.display = 'block'; sm.style.fontWeight = '400'; sm.style.fontSize = '.66rem'; sm.style.opacity = '.75'; sm.style.marginTop = '2px'; b.appendChild(sm);
-  }
-  function syncCore(url, silent) {
-    if (syncBusy) return; syncBusy = true;
-    if (!silent) toast('Synchronisation en cours…');
-    var localUpd = Number(localStorage.getItem(KEY + '-modif') || 0);
-    fetch(url + (url.indexOf('?') < 0 ? '?' : '&') + 't=' + Date.now()).then(function (r) { if (!r.ok) throw new Error('http' + r.status); return r.text(); }).then(function (txt) { var remote; try { remote = JSON.parse(txt); } catch (e) { throw new Error('pasjson'); } return remote; }).then(function (remote) {
-      var rUpd = Number(remote && remote.updated || 0), lastSync = Number(localStorage.getItem(KEY + '-sync') || 0);
-      function post(upd) { return fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ updated: upd, data: data }) }).then(function (r) { return r.json(); }).then(function () { try { localStorage.setItem(KEY + '-sync', String(upd)); } catch (e) { /* ignoré */ } }); }
-      if (remote && remote.data && rUpd > lastSync && localUpd > lastSync && rUpd !== localUpd) {
-        addVersion('Avant fusion avec le Drive'); var now = Date.now(); data = fix(mergeData(data, remote.data, localUpd >= rUpd));
-        try { localStorage.setItem(KEY, JSON.stringify(data)); localStorage.setItem(KEY + '-modif', String(now)); } catch (e) { /* ignoré */ }
-        render(); return post(now).then(function () { toast('Fusionné avec ton Drive : rien n’a été perdu.'); });
-      } else if (remote && remote.data && rUpd > localUpd) {
-        addVersion('Avant mise à jour depuis le Drive'); data = fix(remote.data); try { localStorage.setItem(KEY, JSON.stringify(data)); localStorage.setItem(KEY + '-modif', String(rUpd)); localStorage.setItem(KEY + '-sync', String(rUpd)); } catch (e) { /* ignoré */ }
-        render(); toast('Exercices mis à jour depuis ton Drive.');
-      } else if (localUpd > rUpd) {
-        return post(localUpd).then(function () { if (!silent) toast('Exercices envoyés vers ton Drive.'); });
-      } else { try { localStorage.setItem(KEY + '-sync', String(localUpd)); } catch (e) { /* ignoré */ } if (!silent) toast('Déjà à jour.'); }
-    }).then(function () { try { localStorage.setItem(KEY + '-syncts', String(Date.now())); } catch (e) { /* ignoré */ } syncLabel(); }).catch(function (e) { if (!silent) toast(e && e.message === 'pasjson' ? 'L’adresse répond mais pas comme prévu : dans Apps Script, « Qui a accès » doit être « Tout le monde », et l’adresse finir par /exec.' : e && /^http/.test(e.message || '') ? 'Adresse refusée (' + e.message.slice(4) + ') : vérifie qu’elle finit par /exec.' : 'Pas de réponse : vérifie la connexion et l’adresse /exec.'); })
-      .then(function () { syncBusy = false; });
-  }
-  function syncNow(forceAsk) {
-    var url = forceAsk ? askSyncUrl() : (syncUrl() || askSyncUrl()); if (!url) return;
-    syncCore(url, false);
-  }
-  function syncAuto() { var u = syncUrl(); if (u && navigator.onLine !== false) syncCore(u, true); }
-  function syncSoon() { clearTimeout(syncTimer); syncTimer = setTimeout(syncAuto, 4000); }
-
-  /* ---------- affichage ---------- */
-  function render() {
-    renderFilters(); document.body.classList.toggle('wide', view === 'dash' || view === 'set');
-    ['today', 'exos', 'mats', 'dash', 'set'].forEach(function (v) { $('v-' + v).hidden = v !== view; });
-    document.querySelectorAll('#tabs button').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.view === view ? 'true' : 'false'); });
-    $('addBtn').hidden = view !== 'exos';
-    if (view === 'today') renderToday(); else if (view === 'exos') renderExos(); else if (view === 'mats') renderMats(); else if (view === 'dash') renderDash(); else renderSet();
-  }
-
-  /* garde la position de défilement (page, listes, graphiques, grille) quand on change un filtre ou un affichage */
-  ['renderToday', 'renderExos', 'renderMats', 'renderDash', 'renderSet'].forEach(function (nm) {
-    var orig = eval(nm);
-    var wrapped = function () {
-      var y = window._top ? 0 : window.scrollY; window._top = 0; var sel = '.scrollx, .mlist, .mscroll', els = Array.prototype.slice.call(document.querySelectorAll(sel)), pos = els.map(function (e) { return [e.scrollLeft, e.scrollTop]; });
-      var hab = document.querySelector('.habit .scrollx'); window._hk = hab ? hab.scrollLeft : null;
-      var r = orig.apply(this, arguments);
-      var els2 = document.querySelectorAll(sel); if (els2.length === els.length) Array.prototype.forEach.call(els2, function (e, i) { e.scrollLeft = pos[i][0]; e.scrollTop = pos[i][1]; });
-      window.scrollTo(0, y); var tries = 0, touched = false, stop = function () { touched = true; };
-      window.addEventListener('touchstart', stop, { once: true, passive: true }); window.addEventListener('wheel', stop, { once: true, passive: true });
-      var iv = setInterval(function () { tries++; window._hk = null; if (!touched && Math.abs(window.scrollY - y) > 2) window.scrollTo(0, y); if (touched || tries > 12) clearInterval(iv); }, 40);
-      return r;
-    };
-    if (nm === 'renderToday') renderToday = wrapped; else if (nm === 'renderExos') renderExos = wrapped; else if (nm === 'renderMats') renderMats = wrapped; else if (nm === 'renderDash') renderDash = wrapped; else renderSet = wrapped;
+/* ---------- calculs ---------- */
+function mandatOf(dn,c){if(dn===null)return '';for(const m of c.mandats){const a=dnum(m.debut),b=dnum(m.fin);if(a!==null&&b!==null&&dn>=a&&dn<=b)return m.nom}return ''}
+function compute(){
+  const c=cfg(),tva=c.tva,etudes=sorted('etudes'),fact=sorted('factures'),temps=sorted('temps');
+  const chom=num(c.chomage);
+  const patrTot=Object.values(c.patr).reduce((a,v)=>a+num(v),0);
+  const cotTot=Object.values(c.cot).reduce((a,v)=>a+num(v),0);
+  const baseJEH=4*num(c.smic);
+  const cnjeDate=dnum(c.cnje.date);
+  fact.forEach(f=>{f.d=dnum(f.date);f.mandat=mandatOf(f.d,c)});
+  temps.forEach(t=>{t.d=dnum(t.date);t.mandat=mandatOf(t.d,c);t.I=(isNum(t.min)&&num(t.nb)>0)?num(t.min)/480/num(t.nb):null;t.J=t.I===null?null:t.I*num(t.jeh);t.stat=t.statut||'Pas payé'});
+  const byEtude={};temps.forEach(t=>{if(t.etude)(byEtude[t.etude]=byEtude[t.etude]||[]).push(t)});
+  const personEtude={};temps.forEach(t=>{if(t.prenom&&t.etude&&t.I!==null){const k=t.etude+'\u0001'+t.prenom;personEtude[k]=(personEtude[k]||0)+t.I}});
+  const nums={};etudes.forEach(e=>{if(e.num)nums[e.num]=(nums[e.num]||0)+1});
+  etudes.forEach(e=>{
+    e.d=dnum(e.date);e.mandat=mandatOf(e.d,c);
+    const pays=fact.filter(f=>f.etude===e.num&&e.num);
+    e.K=e.num?pays.reduce((a,f)=>a+num(f.montant),0):0;
+    e.J=(num(e.jeh)&&num(e.montant))?num(e.montant)/(1+tva)/num(e.jeh):null;
+    e.L=L_STAT.includes(e.statut)?num(e.montant)-e.K:null;
+    const ls=byEtude[e.num]||[];e.lines=ls;
+    if(!e.num||!ls.length)e.N='';
+    else if(ls.some(t=>!['Payé','A venir','Non effectué'].includes(t.stat)))e.N='À payer';
+    else if(ls.some(t=>t.stat==='A venir'))e.N='À venir';
+    else if(ls.some(t=>t.stat==='Payé'))e.N='Payé';
+    else e.N='Non effectué';
+    e.cnje=!!(cnjeDate!==null&&((e.d!==null&&e.d>=cnjeDate)||(e.statut!=='Archivée'&&e.statut!=='Refusé / sans suite')));
+    e.R=ls.length?ls.reduce((a,t)=>a+num(t.I),0):null;
+    e.S=ls.length?Math.max(...ls.map(t=>num(t.jeh))):null;
+    const cost=ls.reduce((a,t)=>(['A venir','Non effectué'].includes(t.stat)||t.I===null)?a:a+num(t.J)*(1+chom)+t.I*baseJEH*patrTot,0);
+    e.P=num(e.montant)?cost/(num(e.montant)/(1+tva)):null;
+    e.alerts=alertsOf(e,c,ls,nums,personEtude,fact);
   });
-
-  load();
-  document.querySelectorAll('#tabs button').forEach(function (b) { b.addEventListener('click', function () { try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { /* sans vibration */ } view = b.dataset.view; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } shown = 120; window._top = 1; render(); window.scrollTo(0, 0); }); });
-  $('addBtn').addEventListener('click', function () { openEditor(null); });
-  $('search').addEventListener('input', function () { shown = 120; renderExos(); });
-  $('filtBtn').addEventListener('click', function () { $('filtDlg').showModal(); });
-  $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
-  $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 161'; syncLabel(); $('menu').showModal(); });
-  $('closeMenu').addEventListener('click', function () { $('menu').close(); });
-  $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
-  $('syncUrlBtn').addEventListener('click', function () { $('menu').close(); syncNow(true); });
-  $('exportBtn').addEventListener('click', function () { $('menu').close(); exportFile(); });
-  $('versBtn').addEventListener('click', openVersions);
-  $('versFile').addEventListener('click', function () { $('versDlg').close(); $('sheetInput').click(); });
-  $('versClose').addEventListener('click', function () { $('versDlg').close(); });
-  $('menuBtn').addEventListener('click', versLabel);
-  (function () { var v = versions(); if (!v.length || new Date(v[0].ts).toDateString() !== new Date().toDateString()) addVersion('Automatique (début de journée)'); })();
-  /* bouton Retour d'Android : ferme la fenêtre ouverte, puis revient à À faire, au lieu de quitter l'appli */
-  try {
-    history.pushState({ a: 1 }, '');
-    window.addEventListener('popstate', function () {
-      var open = document.querySelector('dialog[open]');
-      if (open) { open.close(); history.pushState({ a: 1 }, ''); return; }
-      if (view !== 'today') { view = 'today'; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } window._top = 1; render(); window.scrollTo(0, 0); history.pushState({ a: 1 }, ''); }
-    });
-  } catch (e) { /* ignoré */ }
-  $('importSheet').addEventListener('click', function () { $('sheetInput').click(); });
-  $('sheetInput').addEventListener('change', function (e) { var f = e.target.files[0]; if (f) { $('menu').close(); if (/\.json$/i.test(f.name)) importBackup(f); else importSheetFile(f); } e.target.value = ''; });
-  $('form').addEventListener('submit', saveEditor);
-  $('fSem').addEventListener('change', function () { fillMat(); });
-  $('cancelBtn').addEventListener('click', function () { $('editor').close(); });
-  $('delBtn').addEventListener('click', function () { var gone = data.ex.filter(function (x) { return x.id === editingId; })[0]; if (gone) { data.corbeille = data.corbeille || []; data.corbeille.push({ ts: Date.now(), ex: gone }); } data.ex = data.ex.filter(function (x) { return x.id !== editingId; }); save(); $('editor').close(); render(); toast('Exercice supprimé.'); });
-  $('doneCancel').addEventListener('click', function () { $('doneDlg').close(); });
-  window.addEventListener('resize', function () { if (view === 'dash') renderDash(); });
-  render();
-  try { if (document.fonts && document.fonts.load) Promise.all([document.fonts.load('400 12px Poppins'), document.fonts.load('700 12px Poppins')]).then(function () { if (view === 'dash') renderDash(); }); } catch (e) { /* ignoré */ }
-  syncAuto();
-  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') syncAuto(); });
-  window.addEventListener('online', syncAuto);
-  if ('serviceWorker' in navigator) {
-    var hadSW = !!navigator.serviceWorker.controller;
-    navigator.serviceWorker.register('sw.js').catch(function () { /* hors ligne non dispo */ });
-    navigator.serviceWorker.addEventListener('controllerchange', function () { if (hadSW) location.reload(); });
+  return {c,etudes,fact,temps,tva,chom,patrTot,cotTot,baseJEH,personEtude};
+}
+function alertsOf(e,c,ls,nums,pe,fact){
+  const A=[],st=e.statut,fa=e.facture,ech=dnum(e.echeance),tva=c.tva;
+  const L=num(e.L),K=num(e.K),I=num(e.montant);
+  if(INVOICED.includes(fa)&&ech!==null&&ech<TODAY){const r=TODAY-ech;A.push('Retard de '+r+' j'+(r>c.relance2?' : 2e relance':(r>=c.relance1?' : 1re relance par mail':'')))}
+  if(st==='Archivée'&&L>0)A.push('Archivée mais reste à encaisser');
+  if(st==='Archivée'&&fa!=='Solde encaissé')A.push('Archivée sans solde encaissé');
+  if(st==='Archivée'&&e.N==='À payer')A.push('Archivée mais BV non payés');
+  if(I>0&&K>I)A.push('Encaissé supérieur au montant');
+  if(['Convention signée','Convention étudiant avant réalisation','En réalisation'].includes(st)&&!fa)A.push('Facturer l’acompte');
+  if(INVOICED.includes(fa)&&ech===null&&st!=='Archivée'&&st!=='Refusé / sans suite')A.push('Renseigner l’échéance de paiement');
+  if(st==='En réalisation'&&!ls.length)A.push('Renseigner le temps de travail (onglet Temps de travail)');
+  if(ls.length&&!isNum(e.jeh))A.push('Prix de la JEH manquant : rémunérations calculées à 0 €');
+  const sumJ=ls.reduce((a,t)=>a+num(t.J),0);
+  if(I>0&&sumJ>I/(1+tva)+1e-9)A.push('Rémunérations supérieures au montant HT');
+  if(fa==='Solde encaissé'&&st!=='Archivée'&&e.N==='À payer')A.push('Payer les BV');
+  if(fa==='Solde encaissé'&&st!=='Archivée'&&st!=='Refusé / sans suite'&&I>0&&e.N!=='À payer'&&L<=0)A.push('Tout est soldé : archiver l’étude');
+  if(st==='Refusé / sans suite'&&(fa||K>0))A.push('Étude refusée mais facturée');
+  if(fa==='Solde encaissé'&&L>0)A.push('Solde encaissé mais reste à encaisser');
+  if(e.num&&fa!=='Solde encaissé'&&fact.some(f=>f.etude===e.num&&f.note==='Solde encaissé'))A.push('Solde encaissé (Factures) mais statut Facture différent');
+  if(e.d===null)A.push('Renseigner la date de création');
+  if(e.num&&nums[e.num]>1)A.push('N° d’étude en double');
+  if(e.cnje){
+    if(isNum(e.jeh)&&(num(e.jeh)<c.cnje.min||num(e.jeh)>c.cnje.max))A.push('CNJE : JEH client ('+num(e.jeh)+' €) hors de '+c.cnje.min+'–'+c.cnje.max+' €');
+    if(e.S!==null&&e.S>c.cnje.maxInt)A.push('CNJE : JEH intervenant ('+e.S+' €) supérieure à '+c.cnje.maxInt+' €');
+    if(num(e.J)>0&&Math.abs(num(e.J)-Math.round(num(e.J)))>0.005)A.push('CNJE : nb de JEH facturées non entier ('+nf3.format(Math.round(num(e.J)*1000)/1000)+')');
+    const bad=[];const seen={};
+    ls.forEach(t=>{if(t.prenom&&t.I!==null&&!seen[t.prenom]){seen[t.prenom]=1;const s=pe[e.num+'\u0001'+t.prenom];if(Math.abs(s-Math.round(s))>0.005)bad.push(t.prenom)}});
+    if(bad.length)A.push('CNJE : JEH rémunérées non entières ('+bad.join(', ')+')');
+    if(['Convention étudiant avant réalisation','En réalisation','Archivée'].includes(st)&&(num(e.J)>0||e.R!==null)&&Math.abs(num(e.J)-num(e.R))>0.005)A.push('CNJE : JEH facturées ('+nf3.format(Math.round(num(e.J)*1000)/1000)+') ≠ JEH rémunérées ('+nf3.format(Math.round(num(e.R)*1000)/1000)+')');
   }
+  return A;
+}
+function persons(D){const seen={},out=[];D.temps.forEach(t=>{if(t.prenom&&!seen[t.prenom]){seen[t.prenom]=1;out.push(t.prenom)}});return out}
+function costOf(D,pr,filter){ // coût Junior d'une personne (Payé + non payé), comme le classeur
+  const L=D.temps.filter(t=>t.prenom===pr&&t.I!==null&&(!filter||filter(t)));
+  const paid=L.filter(t=>t.stat==='Payé'),unp=L.filter(t=>!['Payé','A venir','Non effectué'].includes(t.stat));
+  const sI=a=>a.reduce((s,t)=>s+t.I,0),sJ=a=>a.reduce((s,t)=>s+num(t.J),0);
+  const f=(I,J)=>J*(1+D.chom)+(I<=0?0:Math.max(I,1))*D.baseJEH*D.patrTot;
+  return {paidI:sI(paid),paidJ:sJ(paid),unpI:sI(unp),unpJ:sJ(unp),cost:f(sI(unp),sJ(unp))+f(sI(paid),sJ(paid))};
+}
+function remun(D){
+  const rows=persons(D).map(pr=>{const x=costOf(D,pr);const brut=x.unpJ,I=Math.round(x.unpI*1e6)/1e6;
+    const net=brut-(I<=0?0:Math.max(I,1))*D.baseJEH*D.cotTot;
+    const cout=brut+(I<=0?0:Math.max(I,1))*D.baseJEH*D.patrTot+brut*D.chom;
+    return {nom:pr,jehPay:Math.round(x.paidI*1e6)/1e6,dejaPaye:x.paidJ,jeh:I,brut,net,cout}});
+  const T=rows.reduce((a,r)=>({jehPay:a.jehPay+r.jehPay,dejaPaye:a.dejaPaye+r.dejaPaye,jeh:a.jeh+r.jeh,brut:a.brut+r.brut,net:a.net+r.net,cout:a.cout+r.cout}),{jehPay:0,dejaPaye:0,jeh:0,brut:0,net:0,cout:0});
+  return {rows,T};
+}
+function dash(D,sel){
+  const all=sel==='Tous les mandats';const c=D.c;
+  const inM=e=>all||e.mandat===sel;
+  const E=D.etudes.filter(inM);
+  const sumBy=(arr,f,keys)=>arr.filter(e=>keys.includes(e.statut)).reduce((a,e)=>a+num(f(e)),0);
+  const tva1=1+D.tva;
+  const encTTC=all?D.etudes.reduce((a,e)=>a+e.K,0):D.fact.filter(f=>f.mandat===sel).reduce((a,f)=>a+num(f.montant),0);
+  const enc=encTTC/tva1;
+  const persN=persons(D);
+  const dep=persN.reduce((a,p)=>a+costOf(D,p,t=>all||t.mandat===sel).cost,0);
+  const ca=sumBy(E,e=>e.montant,SIGNED)/tva1,reste=sumBy(E,e=>e.L,SIGNED)/tva1;
+  const archive=sumBy(E,e=>e.montant,['Archivée'])/tva1;
+  const retard=all?D.etudes.filter(e=>INVOICED.includes(e.facture)&&dnum(e.echeance)!==null&&dnum(e.echeance)<TODAY).reduce((a,e)=>a+num(e.L),0)/tva1:0;
+  const jehF=sumBy(E,e=>e.J,SIGNED),jehR=D.temps.filter(t=>all||t.mandat===sel).reduce((a,t)=>a+num(t.I),0);
+  const nbSigned=E.filter(e=>SIGNED.includes(e.statut)).length;
+  const cnt=k=>E.filter(e=>e.statut===k).length;
+  const groups={'Faisabilité':cnt('Faisabilité'),'Devis envoyé':cnt('Devis envoyé'),'Devis signé':cnt('Devis signé'),'Conv. envoyée':cnt('Convention envoyée'),'Conv. signée':cnt('Convention signée')+cnt('Convention étudiant avant réalisation'),'En réalisation':cnt('En réalisation')};
+  const enCours=Object.values(groups).reduce((a,b)=>a+b,0);
+  // clients
+  const valid=D.etudes.filter(e=>e.client&&e.statut&&e.statut!=='Refusé / sans suite'&&e.d!==null);
+  const mand=c.mandats.map(m=>({nom:m.nom,a:dnum(m.debut),b:dnum(m.fin)}));
+  const before=(cl,start)=>D.etudes.filter(e=>e.client===cl&&e.d!==null&&e.d<start&&e.statut!=='Refusé / sans suite').length;
+  const cm={};valid.forEach(e=>{const k=e.client+'\u0001'+e.mandat;(cm[k]=cm[k]||{client:e.client,mandat:e.mandat,first:e.d,n:0});cm[k].first=Math.min(cm[k].first,e.d)});
+  const cmList=Object.values(cm);
+  cmList.forEach(x=>{const m=mand.find(m=>m.nom===x.mandat);x.prev=m&&m.a!==null?before(x.client,m.a):0});
+  const byClient={};valid.forEach(e=>{(byClient[e.client]=byClient[e.client]||[]).push(e)});
+  const cli=Object.keys(byClient).map(cl=>{
+    const ds=byClient[cl].map(e=>e.d);const first=Math.min(...ds);
+    const nb=cmList.filter(x=>x.client===cl).length;
+    const m0=mand.filter(m=>m.a!==null&&m.a<=first).sort((a,b)=>b.a-a.a)[0];
+    let fid=null;if(m0&&m0.b!==null){const later=ds.filter(d=>d>m0.b);if(later.length)fid=Math.min(...later)}
+    return {cl,first,nb,fid};
+  });
+  const nouveaux=all?cli.length:cmList.filter(x=>x.mandat===sel&&x.prev===0).length;
+  const fideles=all?cli.filter(x=>x.nb>=2).length:cmList.filter(x=>x.mandat===sel&&x.prev>0).length;
+  // séries temporelles (50 points)
+  let t0,t1;
+  if(all){
+    const ds=D.fact.map(f=>f.d).filter(d=>d!==null),st=mand.map(m=>m.a).filter(x=>x!==null),en=mand.map(m=>m.b).filter(x=>x!==null);
+    const first=[...ds,...st];t0=first.length?Math.min(...first):TODAY;
+    t1=en.length?Math.min(TODAY,Math.max(...en)):TODAY;
+  }else{
+    const m=mand.find(m=>m.nom===sel);
+    t0=m&&m.a!==null?m.a:TODAY;
+    t1=m&&m.b!==null?Math.min(TODAY,m.b):TODAY;
+  }
+  if(t1<=t0)t1=t0+1;
+  const pts=[];for(let k=0;k<50;k++)pts.push(t0+Math.round(k*(t1-t0)/49));
+  const ser={enc:[],dep:[],tot:[],fid:[]};
+  pts.forEach(T=>{
+    const na=!all&&T>TODAY;
+    if(na){ser.enc.push(null);ser.dep.push(null);ser.tot.push(null);ser.fid.push(null);return}
+    ser.enc.push(D.fact.filter(f=>f.d!==null&&f.d<=T&&(all||f.mandat===sel)).reduce((a,f)=>a+num(f.montant),0)/tva1);
+    ser.dep.push(D.temps.filter(t=>t.d!==null&&t.d<=T&&t.I!==null&&!['A venir','Non effectué'].includes(t.stat)&&(all||t.mandat===sel)).reduce((a,t)=>a+num(t.J)*(1+D.chom)+t.I*D.baseJEH*D.patrTot,0));
+    if(all){ser.tot.push(cli.filter(x=>x.first<=T).length);ser.fid.push(cli.filter(x=>x.fid!==null&&x.fid<=T).length)}
+    else{ser.tot.push(cmList.filter(x=>x.mandat===sel&&x.first<=T).length);ser.fid.push(cmList.filter(x=>x.mandat===sel&&x.prev>0&&x.first<=T).length)}
+  });
+  const withAlert=D.etudes.filter(e=>e.alerts.length);
+  return {all,total:E.length,enc,dep,recette:enc-dep,ca,reste,archive,retard,jehF,jehR,nbSigned,groups,enCours,archivees:cnt('Archivée'),refusees:cnt('Refusé / sans suite'),nouveaux,fideles,pts,t0,t1,ser,withAlert,nbAlerts:withAlert.reduce((a,e)=>a+e.alerts.length,0)};
+}
+
+/* ---------- graphiques SVG ---------- */
+const PAL=['var(--c1)','var(--c2)','var(--c3)','var(--c4)','var(--c5)','var(--c6)'];
+function donut(parts,center,sub){
+  const tot=parts.reduce((a,p)=>a+p.v,0),R=62,C=2*Math.PI*R;let off=0,segs='';
+  if(tot>0)parts.forEach(p=>{if(p.v<=0)return;const len=C*p.v/tot;segs+=`<circle cx="90" cy="90" r="${R}" fill="none" stroke="${p.c}" stroke-width="30" stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-off}" transform="rotate(-90 90 90)"/>`;off+=len});
+  else segs=`<circle cx="90" cy="90" r="${R}" fill="none" stroke="var(--line)" stroke-width="30"/>`;
+  return `<svg viewBox="0 0 180 180" role="img" aria-label="${esc(sub)}">${segs}<text class="ctr" x="90" y="92" text-anchor="middle" dominant-baseline="middle" style="font-size:36px">${center}</text></svg>`;
+}
+function legendHtml(parts){return '<div class="legend">'+parts.map(p=>`<span><i style="background:${p.c}"></i>${esc(p.l)} · ${p.v}</span>`).join('')+'</div>'}
+function smooth(a){const f=(x,i)=>x[i]===null?null:((x[i-1]==null?x[i]:x[i-1])+2*x[i]+(x[i+1]==null?x[i]:x[i+1]))/4;const o=a.map((_,i)=>f(a,i));return o}
+let GRAD=0;
+function lineChart(pts,series,fmt,int){
+  const W=560,H=230,pl=44,pr=10,pt=12,pb=26;
+  const sm=series.map(s=>({c:s.c,l:s.l,a:smooth(smooth(s.v)),area:s.area}));
+  let mx=0;sm.forEach(s=>s.a.forEach(v=>{if(v!==null&&v>mx)mx=v}));if(mx<=0)mx=1;
+  const nice=int?Math.max(4,Math.ceil(mx/4)*4):(()=>{const p=Math.pow(10,Math.floor(Math.log10(mx)));const m=mx/p;return (m<=1?1:m<=2?2:m<=5?5:10)*p})();
+  const X=i=>pl+(W-pl-pr)*i/(pts.length-1),Y=v=>pt+(H-pt-pb)*(1-v/nice);
+  let g='';for(let k=0;k<=4;k++){const v=nice*k/4,y=Y(v);g+=`<line x1="${pl}" x2="${W-pr}" y1="${y}" y2="${y}" stroke="var(--line)"/><text x="${pl-6}" y="${y+3}" text-anchor="end">${fmt(v)}</text>`}
+  let lastLab=-99;pts.forEach((T,i)=>{const d=new Date(T*864e5),prev=i?new Date(pts[i-1]*864e5):null;if((!prev||prev.getUTCMonth()!==d.getUTCMonth())&&i-lastLab>=7&&i<=pts.length-4){lastLab=i;g+=`<text x="${X(i)}" y="${H-8}" text-anchor="middle">${MOIS[d.getUTCMonth()]}${d.getUTCMonth()===0||i===0?' '+String(d.getUTCFullYear()).slice(2):''}</text>`}});
+  let defs='',fills='',lines='';
+  sm.forEach((s,k)=>{let d='',started=false,lastI=0;s.a.forEach((v,i)=>{if(v===null)return;d+=(started?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1);started=true;lastI=i});
+    if(!d)return;
+    const id='gr'+(++GRAD),fc=s.c==='var(--c3)'?'var(--c5)':s.c;
+    defs+=`<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:${fc};stop-opacity:.6"/><stop offset="1" style="stop-color:${fc};stop-opacity:.14"/></linearGradient>`;
+    fills+=`<path d="${d}L${X(lastI)} ${Y(0)}L${X(s.a.findIndex(v=>v!==null))} ${Y(0)}Z" fill="url(#${id})"/>`;
+    lines+=`<path d="${d}" fill="none" stroke="${s.c}" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>`});
+  g+=fills+lines;
+  return `<div class="chartbox"><svg viewBox="0 0 ${W} ${H}" role="img"><defs>${defs}</defs>${g}</svg></div><div class="legend">${sm.map(s=>`<span><i style="background:${s.c}"></i>${esc(s.l)}</span>`).join('')}</div>`;
+}
+
+/* ---------- champs de saisie ---------- */
+const attr=(c,id,f)=>`data-c="${c}" data-id="${id}" data-f="${f}"`;
+const inT=(c,r,f,ph)=>`<input ${attr(c,r.id,f)} value="${esc(r[f])}" placeholder="${esc(ph||'')}">`;
+const inN=(c,r,f)=>`<input type="number" step="any" inputmode="decimal" ${attr(c,r.id,f)} value="${r[f]===null||r[f]===undefined?'':esc(r[f])}">`;
+const inD=(c,r,f)=>`<input type="date" ${attr(c,r.id,f)} value="${esc(r[f])}">`;
+const sel=(c,r,f,opts,blank)=>{const v=r[f]||'';const o=opts.slice();if(v&&!o.includes(v))o.push(v);return `<select ${attr(c,r.id,f)}>${blank!==false?'<option value=""></option>':''}${o.map(x=>`<option${x===v?' selected':''}>${esc(x)}</option>`).join('')}</select>`};
+const delBtn=(c,id)=>`<button class="x" data-del="${c}:${id}" title="Supprimer la ligne" aria-label="Supprimer la ligne">✕</button>`;
+
+/* ---------- vues ---------- */
+const TABS=[['dash','Tableau de bord'],['etudes','Suivi des études'],['factures','Factures'],['temps','Temps de travail'],['remun','Rémunérations'],['formation','Qualité formation'],['params','Paramètres'],['legende','Légende']];
+const ICO={
+ trend:'<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
+ sign:'<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M9 15l2 2 4-4"/>',
+ hour:'<path d="M6 3h12M6 21h12"/><path d="M7 3v3a5 5 0 0 0 2 4l3 2-3 2a5 5 0 0 0-2 4v3M17 3v3a5 5 0 0 1-2 4l-3 2 3 2a5 5 0 0 1 2 4v3"/>',
+ pie:'<path d="M12 3v9h9"/><path d="M20.5 15A9 9 0 1 1 9 3.5"/>',
+ list:'<path d="M9 6h12M9 12h12M9 18h12"/><path d="M4 6h.01M4 12h.01M4 18h.01"/>',
+ bell:'<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/>',
+ clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+ chart:'<path d="M4 20V11M10 20V4M16 20v-6M22 20H2"/>',
+ euro:'<circle cx="12" cy="12" r="9"/><path d="M15 9.2a3.6 3.6 0 1 0 0 5.6M8 11h5.5M8 13h5.5"/>',
+ users:'<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.3c2 .8 3.5 2.6 3.5 5.7"/>',
+ ok:'<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/>',
+ warn:'<path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/>'};
+const ic=(k,sz)=>`<svg class="ico" viewBox="0 0 24 24" width="${sz||16}" height="${sz||16}" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICO[k]}</svg>`;
+const TAB_SHORT={dash:'Tableau',etudes:'Études',factures:'Factures',temps:'Temps',remun:'Paie',formation:'Formation',params:'Réglages',legende:'Légende'};
+const TAB_ICON={
+ dash:'<path d="M4 20V11M10 20V4M16 20v-6M22 20H2"/>',
+ etudes:'<path d="M9 3h6M10 3v6l-5.5 9.5A2 2 0 0 0 6.2 21h11.6a2 2 0 0 0 1.7-2.5L14 9V3"/><path d="M7.5 15h9"/>',
+ factures:'<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+ temps:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+ remun:'<circle cx="12" cy="12" r="9"/><path d="M15 9.2a3.6 3.6 0 1 0 0 5.6M8 11h5.5M8 13h5.5"/>',
+ formation:'<path d="M2 9l10-5 10 5-10 5z"/><path d="M6 11.5V16c0 1.4 2.7 3 6 3s6-1.6 6-3v-4.5"/>',
+ params:'<path d="M3 6h9M16 6h5M3 12h3M10 12h11M3 18h11M18 18h3"/><circle cx="14" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="16" cy="18" r="2"/>',
+ legende:'<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>'};
+function renderNav(){$('#nav').innerHTML=TABS.map(([k,l])=>`<button data-tab="${k}" aria-current="${k===tab}" aria-label="${l}"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TAB_ICON[k]}</svg><span>${TAB_SHORT[k]}</span></button>`).join('')}
+function renderStatus(){
+  let h='';
+  if(timeoutNote)h+='<div class="msg">Les données sont encore en cours de chargement : si ce message reste, vérifiez la connexion.</div>';
+  if(dbErr)h+='<div class="msg err">'+esc(dbErr)+'</div>';
+  if(db&&!canWrite)h+='<div class="msg">Lecture seule : vous ne pouvez pas modifier ces données.</div>';
+  $('#status').innerHTML=h;
+}
+function renderLock(msg){
+  document.body.classList.add('login');
+  const first=!lsGet('suivi.h');
+  $('#view').innerHTML=`<form class="login" id="lf" autocomplete="on"><img class="hac" src="splash-logo.png" alt="HAC Chimie Mulhouse">
+  <label for="cp">Mot de passe</label><div class="pw"><input id="cp" name="password" type="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" autofocus><button type="button" class="eye" data-eye="1" aria-label="Afficher le mot de passe" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7-4 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/><path class="slash" d="M3 3l18 18"/></svg></button></div>
+  <div class="msg err" id="lerr" ${msg?'':'hidden'}>${esc(msg||'')}</div>
+  <button class="b" type="submit" id="lgo">Se connecter</button></form>`;
+}
+async function doLogin(){
+  const p=($('#cp').value||'').trim(),err=t=>{const e=$('#lerr');e.textContent=t;e.hidden=false};
+  if(!p)return err('Saisissez le mot de passe.');
+  const h=await sha(p),first=!lsGet('suivi.h'),u=lsGet('suivi.url')||'';
+  const go=$('#lgo');go.disabled=true;go.textContent='Connexion…';
+  let ok=null;
+  if(u){try{const r=await fetch(u,{method:'POST',body:JSON.stringify({pass:p,action:'ping'}),redirect:'follow'});const j=await r.json();ok=!(j&&j.error)}catch(e){ok=null}}
+  if(ok===null)ok=first||h===lsGet('suivi.h');
+  if(!ok){go.disabled=false;go.textContent='Se connecter';return err(u?'Mot de passe refusé. Il doit être identique à MOT_DE_PASSE dans votre script Google (nouvelle version déployée).':'Mot de passe incorrect.')}
+  lsSet('suivi.h',h);sSet('suivi.pw',p);location.reload();
+}
+async function doSync(){
+  const u=($('#syu').value||'').trim(),m=$('#sym'),c=CONN();
+  const say=(t,bad)=>{m.textContent=t;m.className='msg'+(bad?' err':'');m.hidden=false};
+  if(!/^https:\/\/script\.google\.com\//.test(u))return say('L’adresse doit commencer par https://script.google.com/…',1);
+  say('Connexion…');
+  try{
+    const post=b=>fetch(u,{method:'POST',body:JSON.stringify(Object.assign({pass:c.pass},b)),redirect:'follow'}).then(r=>r.json());
+    const srv=await post({action:'loadAll'});
+    if(srv&&srv.error)return say(srv.error==='auth'?'Le script refuse le mot de passe : mettez le même mot de passe dans le script Google (MOT_DE_PASSE), puis redéployez.':'Erreur du script : '+srv.error,1);
+    const has=Object.values(srv||{}).some(o=>o&&Object.keys(o).length);
+    if(!has){
+      let loc={};try{loc=JSON.parse(lsGet('suivi.cache')||'{}')||{}}catch(e){}
+      for(const col of Object.keys(loc))for(const id of Object.keys(loc[col]||{})){const r=await post({action:'save',col,id,json:JSON.stringify(loc[col][id])});if(r&&r.error)return say('Erreur du script : '+r.error,1)}
+    }else{lsSet('suivi.cache',JSON.stringify(srv))}
+    lsSet('suivi.url',u);location.reload();
+  }catch(e){say('Connexion impossible : vérifiez l’adresse et le réseau.',1)}
+}
+function addBtn(label,act){return `<div class="plus"><button class="b" data-add="${act}">+ ${label}</button></div>`}
+function render(){
+  renderNav();renderStatus();$('#today').textContent='Mis à jour le '+fdate(TODAY);
+  const v=$('#view');
+  if(!UNLOCKED()){renderLock();return}
+  document.body.classList.remove('login');
+  const ready=Object.values(loaded).every(Boolean);
+  if(!ready){v.innerHTML='<div class="card">Chargement des données…</div>';return}
+  const active=document.activeElement,fk=active&&active.dataset&&active.dataset.c?active.dataset.c+'|'+active.dataset.id+'|'+active.dataset.f:null,scrollY=window.scrollY;
+  const D=compute();
+  const views={dash:vDash,etudes:vEtudes,factures:vFactures,temps:vTemps,remun:vRemun,formation:vFormation,params:vParams,legende:vLegende};
+  const scrolls=[...document.querySelectorAll('.tw')].map(e=>e.scrollLeft);
+  v.innerHTML=views[tab](D);
+  
+  document.querySelectorAll('.tw').forEach((e,i)=>{if(scrolls[i])e.scrollLeft=scrolls[i]});
+  if(fk){const [c,id,f]=fk.split('|');const el=v.querySelector(`[data-c="${c}"][data-id="${id}"][data-f="${f}"]`);if(el){el.focus({preventScroll:true});try{if(el.setSelectionRange&&el.type!=='number'&&el.type!=='date')el.setSelectionRange(el.value.length,el.value.length)}catch(e){}}}
+  window.scrollTo(0,scrollY);
+}
+function vDash(D){
+  const c=D.c;const M=['Tous les mandats'].concat(c.mandats.map(m=>m.nom));if(!M.includes(mandatSel))mandatSel='Tous les mandats';
+  const d=dash(D,mandatSel);
+  const sel=`<div class="row" style="margin:4px 0 12px"><label for="msel" class="small">Mandat affiché</label><select id="msel">${M.map(m=>`<option${m===mandatSel?' selected':''}>${esc(m)}</option>`).join('')}</select></div>`;
+  const n=d.withAlert.length;
+  const banner=n===0?`<div class="banner ok">${ic('ok',16)}<span>Tout est à jour : aucune alerte à traiter</span></div>`:`<div class="banner">${ic('warn',16)}<span>${n} étude(s) à traiter · ${d.nbAlerts} alerte(s)</span></div>`;
+  const kpi=(l,v,note,k)=>`<div class="card kpi"><div class="lab">${ic(k,15)}<span>${l}</span></div><div class="val">${v}</div><div class="note">${note}</div></div>`;
+  const vue=[{l:'En cours',v:d.enCours,c:PAL[0]},{l:'Archivées',v:d.archivees,c:'var(--arch)'},{l:'Refusées',v:d.refusees,c:PAL[2]}];
+  const det=Object.keys(d.groups).map((k,i)=>({l:k,v:d.groups[k],c:PAL[i%6]}));
+  const al=d.withAlert.slice(0,6);
+  const R=remun(D);
+  const alHtml=al.length?`<ul class="al">${al.map(e=>`<li><b>${esc(e.num||'(sans n°)')}</b> · ${esc(e.alerts.join(' · '))}</li>`).join('')}</ul>`:'<div class="small">Rien à signaler.</div>';
+  const mf=v=>nf0.format(v);
+  return sel+banner+`
+  <div class="grid k3">
+    ${kpi('RECETTE',eur0(d.recette),d.all?'encaissé − dépenses':esc(mandatSel),'trend')}
+    ${kpi('CA SIGNÉ HT',eur0(d.ca),d.all?'dont archivé : '+nf0.format(Math.round(d.archive))+' €':esc(mandatSel),'sign')}
+    ${kpi('À ENCAISSER',eur0(d.reste),d.all?'HT · dont retard '+nf0.format(Math.round(d.retard))+' €':'HT · '+esc(mandatSel),'hour')}
+  </div>
+  <div class="grid">
+    <div class="card"><h3>${ic('pie')}Où en sont les études ?</h3><div class="hint">Vue d’ensemble</div><div class="donutbox">${donut(vue,d.total,'Études au total')}</div>${legendHtml(vue)}</div>
+    <div class="card"><h3>${ic('list')}Détail des études en cours</h3><div class="hint">Nombre d’études par statut</div><div class="donutbox">${donut(det,d.enCours,'Détail des études en cours')}</div>${legendHtml(det)}</div>
+    <div class="card"><h3>${ic('bell')}Alertes à traiter</h3><div class="hint">${n>6?'6 premières sur '+n+' · ':''}Détail : onglet Suivi des études</div>${alHtml}</div>
+  </div>
+  <div class="grid">
+    <div class="card"><h3>${ic('clock')}Temps de travail (JEH)</h3><div class="hint">d’après le suivi</div>
+      <div class="stat big"><span>JEH facturées</span><span>${nf3.format(Math.round(d.jehF*1000)/1000)}</span></div>
+      <div class="stat big"><span>JEH rémunérées</span><span>${nf3.format(Math.round(d.jehR*1000)/1000)}</span></div>
+      <div class="stat"><span>Études signées</span><span>${d.nbSigned}</span></div></div>
+    <div class="card"><h3>${ic('chart')}Chiffre d’affaires net et dépenses</h3><div class="hint">&nbsp;</div>
+      <div class="stat big"><span>Encaissé HT</span><span>${eur0(d.enc)}</span></div>
+      <div class="stat big"><span>Dépenses (coût total des embauches)</span><span>${eur0(d.dep)}</span></div>
+      <div class="small" style="margin-top:6px">${d.enc===0?'Aucun CA encaissé':Math.round(d.dep/d.enc*100)+' % du CA encaissé en dépenses salariales'}</div></div>
+    <div class="card"><h3>${ic('euro')}Rémunérations</h3><div class="hint">JEH non payées, regroupées par personne</div>
+      <div class="stat"><span>Brut à payer</span><span>${eur(R.T.brut)}</span></div>
+      <div class="stat"><span>Cotisations salariales (retenues)</span><span>${eur(R.T.brut-R.T.net)}</span></div>
+      <div class="stat big"><span>Net à virer aux élèves</span><span>${eur(R.T.net)}</span></div>
+      <div class="stat"><span>Charges patronales (estim.)</span><span>${eur(R.T.cout-R.T.brut)}</span></div>
+      <div class="stat big"><span>Coût total pour la Junior</span><span>${eur(R.T.cout)}</span></div>
+      <div class="small" style="margin-top:6px">Estimations : taux dans Paramètres, 1 JEH minimum.</div></div>
+  </div>
+  <div class="two">
+    <div class="card"><h3>${ic('trend')}Encaissé et dépenses</h3><div class="hint">${d.all?'Cumul HT · tout l’historique':'Cumul HT · '+esc(mandatSel)} · du ${fdate(d.t0)} au ${fdate(d.t1)}</div>${lineChart(d.pts,[{c:'var(--c1)',l:'Encaissé HT',v:d.ser.enc,area:true},{c:'var(--c3)',l:'Dépenses',v:d.ser.dep}],v=>mf(v)+' €')}</div>
+    <div class="card"><h3>${ic('users')}Clients totaux et fidèles</h3><div class="hint">Cumul · en rose = les clients fidèles · du ${fdate(d.t0)} au ${fdate(d.t1)}</div>${lineChart(d.pts,[{c:'var(--c3)',l:'Clients totaux',v:d.ser.tot,area:true},{c:'var(--c1)',l:'Clients fidèles',v:d.ser.fid}],v=>String(Math.round(v)),true)}<div class="tiles"><div class="tile"><div class="tr"><span class="ti"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M19 8v6M16 11h6"/></svg></span><b>${d.nouveaux}</b></div><small>Nouveaux clients</small></div><div class="tile"><div class="tr"><span class="ti"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.4 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10z"/></svg></span><b>${d.fideles}</b></div><small>Clients fidèles</small></div></div></div>
+  </div>`;
+}
+function vEtudes(D){
+  const c=D.c;
+  const rows=D.etudes.map(e=>`<tr>
+   <td>${inD('etudes',e,'date')}</td><td class="a">${esc(e.mandat)}</td><td>${inT('etudes',e,'client')}</td><td>${inT('etudes',e,'num')}</td><td style="min-width:150px">${inT('etudes',e,'resume')}</td>
+   <td>${sel('etudes',e,'statut',c.statuts)}</td><td>${sel('etudes',e,'facture',c.factures)}</td><td>${inN('etudes',e,'jeh')}</td><td>${inN('etudes',e,'montant')}</td>
+   <td class="a n">${e.J===null?'':nf3.format(Math.round(e.J*1000)/1000)}</td><td class="a n">${eur(e.K)}</td><td class="a n">${e.L===null?'':eur(e.L)}</td>
+   <td>${inD('etudes',e,'echeance')}</td><td class="a">${esc(e.N)}</td><td class="a al">${esc(e.alerts.join(' · '))}</td>
+   <td class="a n">${e.P===null?'':Math.round(e.P*100)+' %'}</td><td class="a">${e.cnje?'Oui':''}</td><td class="a n">${e.R===null?'':nf3.format(Math.round(e.R*1000)/1000)}</td><td class="a n">${e.S===null?'':eur(e.S)}</td><td>${delBtn('etudes',e.id)}</td></tr>`).join('');
+  return `<h2>Suivi des études</h2><div class="small">Cases claires : à saisir. Cases teintées : calculées (mandat, JEH facturées, encaissé d’après l’onglet Factures, reste, BV d’après Temps de travail, alertes).</div>${addBtn('Ajouter une étude','etudes')}
+  <div class="tw"><table><thead><tr><th>Date de création</th><th>Mandat</th><th>Client</th><th>N° d’étude</th><th>Résumé</th><th>Statut</th><th>Facture</th><th>JEH client HT</th><th>Montant TTC</th><th>Nb JEH facturées</th><th>Encaissé TTC</th><th>Reste à encaisser (TTC)</th><th>Échéance paiement</th><th>BV</th><th>Alertes</th><th>Dépenses embauches / HT</th><th>CNJE</th><th>JEH rémunérées</th><th>JEH interv. max HT</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="20" class="small" style="padding:14px">Aucune étude pour le moment.</td></tr>'}</tbody></table></div>`;
+}
+function vFactures(D){
+  const rows=D.fact.map(f=>`<tr><td class="a">${esc(f.mandat)}</td><td>${inD('factures',f,'date')}</td><td>${selEtude('factures',f,'etude',D)}</td><td>${inN('factures',f,'montant')}</td><td>${sel('factures',f,'note',D.c.factures)}</td><td>${delBtn('factures',f.id)}</td></tr>`).join('');
+  return `<h2>Factures : une ligne par paiement reçu</h2><div class="small">Date du paiement, étude, montant TTC reçu. La colonne « Encaissé TTC » du suivi est la somme des paiements de l’étude ; le mandat se déduit de la date (voir les mandats dans Paramètres).</div>${addBtn('Ajouter un paiement','factures')}
+  <div class="tw"><table><thead><tr><th>Mandat</th><th>Date</th><th>Étude</th><th>Montant TTC encaissé</th><th>Note</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="6" class="small" style="padding:14px">Aucun paiement enregistré.</td></tr>'}</tbody></table></div>`;
+}
+function selEtude(c,r,f,D){return sel(c,r,f,D.etudes.map(e=>e.num).filter(Boolean))}
+function vTemps(D){
+  const names=persons(D);
+  const rows=D.temps.map(t=>`<tr><td class="a">${esc(t.mandat)}</td><td>${inD('temps',t,'date')}</td><td><input list="pl" ${attr('temps',t.id,'prenom')} value="${esc(t.prenom)}"></td><td>${selEtude('temps',t,'etude',D)}</td><td>${inT('temps',t,'note')}</td><td>${inN('temps',t,'min')}</td><td>${inN('temps',t,'nb')}</td><td>${inN('temps',t,'jeh')}</td>
+   <td class="a n">${t.I===null?'':nf3.format(Math.round(t.I*10000)/10000)}</td><td class="a n">${t.J===null?'':eur(t.J)}</td><td>${sel('temps',{id:t.id,statut:t.stat},'statut',BV_STAT,false)}</td><td>${delBtn('temps',t.id)}</td></tr>`).join('');
+  return `<h2>Temps de travail : qui a travaillé combien, et combien lui verser</h2><div class="small">JEH rémunérée = minutes ÷ 480 ÷ nombre de personnes. Rémunération brute = JEH rémunérée × JEH intervenant HT. Les lignes « Payé », « A venir » ou « Non effectué » ne sont pas à payer.</div>${addBtn('Ajouter une ligne de temps','temps')}
+  <datalist id="pl">${names.map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
+  <div class="tw"><table><thead><tr><th>Mandat</th><th>Date</th><th>Prénom</th><th>Étude</th><th>Note</th><th>Min travaillées</th><th>Nb de personnes</th><th>JEH intervenant HT</th><th>JEH rémunérée</th><th>Rémunération brute</th><th>Statut</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="12" class="small" style="padding:14px">Aucune ligne de temps.</td></tr>'}</tbody></table></div>`;
+}
+function vRemun(D){
+  const R=remun(D);
+  const rows=R.rows.map(r=>`<tr><td>${esc(r.nom)}</td><td class="n">${nf3.format(r.jehPay)}</td><td class="n">${eur(r.dejaPaye)}</td><td class="n">${nf3.format(r.jeh)}</td><td class="n">${eur(r.brut)}</td><td class="n">${eur(r.net)}</td><td class="n">${eur(r.cout)}</td></tr>`).join('');
+  const T=R.T;
+  return `<h2>Rémunérations : ce qu’il reste à payer</h2><div class="small">Page automatique : rien à saisir. Pour chaque personne, elle regroupe les JEH du journal ni « Payé », ni « A venir », ni « Non effectué », puis calcule dessus brut, net (après cotisations salariales) et coût Junior. En dessous de 1 JEH au total, cotisations et charges sont calculées sur 1 JEH (minimum fixe). Passez les lignes d’un BV à « Payé » et la personne repart à zéro.</div>
+  <div class="tw" style="margin-top:12px"><table><thead><tr><th>Nom</th><th>JEH payées</th><th>Déjà payé (brut)</th><th>JEH non payées</th><th>Brut à payer</th><th>Net à virer</th><th>Coût total Junior</th></tr></thead><tbody>
+  <tr style="font-weight:700;background:var(--card2)"><td>Total</td><td class="n">${nf3.format(T.jehPay)}</td><td class="n">${eur(T.dejaPaye)}</td><td class="n">${nf3.format(Math.round(T.jeh*1e6)/1e6)}</td><td class="n">${eur(T.brut)}</td><td class="n">${eur(T.net)}</td><td class="n">${eur(T.cout)}</td></tr>${rows||'<tr><td colspan="7" class="small" style="padding:14px">Personne pour le moment.</td></tr>'}</tbody></table></div>`;
+}
+function vFormation(D){
+  const names=persons(D);Object.keys(S.formation).forEach(id=>{const n=S.formation[id].nom;if(n&&!names.includes(n))names.push(n)});
+  const open=D.etudes.filter(e=>e.num&&e.statut!=='Archivée'&&e.statut!=='Refusé / sans suite'),closed=D.etudes.filter(e=>e.num&&(e.statut==='Archivée'||e.statut==='Refusé / sans suite'));
+  const cols=open.concat(closed);
+  const LV=['0 · Non formé','1 · Notions','2 · Autonome avec appui','3 · Autonome','4 · Référent (peut former)'];
+  const key=n=>'f_'+n.toLowerCase().replace(/[^a-z0-9]+/g,'_');
+  const head=cols.map(e=>`<th style="${closed.includes(e)?'opacity:.6':''}">${esc(e.num)}<div class="small" style="font-weight:400">${esc(e.statut||'')}</div></th>`).join('');
+  const body=names.map(n=>{const doc=S.formation[key(n)]||{niveaux:{}};const vals=cols.map(e=>doc.niveaux&&isNum(doc.niveaux[e.num])?num(doc.niveaux[e.num]):null).filter(v=>v!==null);
+    const avg=vals.length?(vals.reduce((a,b)=>a+b,0)/vals.length):null;
+    return `<tr><td style="white-space:nowrap;padding:6px 10px"><b>${esc(n)}</b></td><td class="n" style="min-width:56px">${avg===null?'':(Math.round(avg*10)/10)}</td>${cols.map(e=>{const v=doc.niveaux&&isNum(doc.niveaux[e.num])?num(doc.niveaux[e.num]):'';return `<td><select data-lvl="${esc(n)}" data-etude="${esc(e.num)}" class="${v===''?'':'lv'+v}"><option value=""></option>${[0,1,2,3,4].map(k=>`<option value="${k}"${v===k?' selected':''}>${k}</option>`).join('')}</select></td>`}).join('')}</tr>`}).join('');
+  return `<h2>Niveau de formation par intervenant et par étude</h2><div class="small">Une ligne par intervenant (les prénoms viennent du Temps de travail), une colonne par étude : les études en cours d’abord, les archivées ensuite. Choisissez le niveau de 0 à 4 dans la case, la couleur suit.</div>
+  <div class="legend" style="margin:10px 0">${LV.map((l,i)=>`<span><span class="sw lv${i}"></span>${esc(l)}</span>`).join('')}</div>
+  <div class="tw"><table class="mx"><thead><tr><th>Intervenant</th><th>Niveau moyen</th>${head}</tr></thead><tbody>${body||'<tr><td class="small" style="padding:14px">Ajoutez d’abord du temps de travail pour faire apparaître les intervenants.</td></tr>'}</tbody></table></div>`;
+}
+function cf(label,path,val,pct){return `<label>${label}</label><input type="number" step="any" inputmode="decimal" data-cfg="${path}" ${pct?'data-pct="1"':''} value="${pct?Math.round(val*1e6)/1e4:esc(val)}">`}
+function vParams(D){
+  const c=D.c;const sumP=o=>Object.values(o).reduce((a,v)=>a+num(v),0);
+  const mand=c.mandats.map((m,i)=>`<div class="row" style="margin-bottom:6px"><input data-mand="${i}" data-k="nom" value="${esc(m.nom)}" style="flex:1 1 140px" placeholder="Nom du mandat"><input type="date" data-mand="${i}" data-k="debut" value="${esc(m.debut)}"><input type="date" data-mand="${i}" data-k="fin" value="${esc(m.fin)}"><button class="x" data-delmand="${i}" aria-label="Supprimer le mandat">✕</button></div>`).join('');
+  return `<h2>Paramètres</h2><div class="small">Modifiez les valeurs : tout se recalcule aussitôt. Les listes se saisissent à raison d’une valeur par ligne.</div>
+  ${devCard()}<div class="two" style="margin-top:12px">
+   <div class="card"><h3>Statut des études</h3><textarea data-list="statuts" rows="10" style="width:100%">${esc(c.statuts.join('\n'))}</textarea><div class="small">Les calculs reconnaissent les noms par défaut (Faisabilité, Devis signé, Archivée…).</div></div>
+   <div class="card"><h3>Statut de la facture</h3><textarea data-list="factures" rows="10" style="width:100%">${esc(c.factures.join('\n'))}</textarea></div>
+   <div class="card"><h3>Mandats</h3>${mand||'<div class="small">Aucun mandat : ajoutez-en un pour rattacher les dates.</div>'}<div class="plus"><button class="b ghost" data-addmand="1">+ Ajouter un mandat</button></div></div>
+   <div class="card"><h3>Délais d’alerte et TVA</h3><div class="cfg">${cf('1re relance par mail : à partir de (jours de retard)','relance1',c.relance1)}${cf('2e relance : à partir de (jours de retard)','relance2',c.relance2)}${cf('Taux de TVA (montants saisis en TTC), %','tva',c.tva,true)}</div></div>
+   <div class="card"><h3>CNJE</h3><div class="cfg"><label>Date d’entrée en vigueur des règles (vide = aucune règle)</label><input type="date" data-cfg="cnje.date" value="${esc(c.cnje.date)}" style="text-align:left">${cf('JEH client minimum (€ HT)','cnje.min',c.cnje.min)}${cf('JEH client maximum (€ HT)','cnje.max',c.cnje.max)}${cf('JEH intervenant maximum (€ HT)','cnje.maxInt',c.cnje.maxInt)}</div><div class="small" style="margin-top:8px">Une étude suit les règles CNJE si elle a été créée à partir de cette date, ou si elle n’est pas archivée (en cours). Sans date, aucune règle n’est appliquée.</div></div>
+   <div class="card"><h3>Calcul des cotisations</h3><div class="cfg">${cf('SMIC horaire brut (€) : la base d’une JEH = 4 × SMIC','smic',c.smic)}</div>
+    <div class="small" style="margin:10px 0 4px"><b>Cotisations salariales (part étudiant), %</b></div><div class="cfg">${Object.keys(COT_LAB).map(k=>cf(COT_LAB[k],'cot.'+k,c.cot[k],true)).join('')}<label><b>Total</b></label><b style="text-align:right">${nf2.format(sumP(c.cot)*100)} %</b></div>
+    <div class="small" style="margin:10px 0 4px"><b>Charges patronales, %</b></div><div class="cfg">${Object.keys(PATR_LAB).map(k=>cf(PATR_LAB[k],'patr.'+k,c.patr[k],true)).join('')}${cf('Assurance chômage part Junior (sur la rétribution brute)','chomage',c.chomage,true)}<label><b>Total charges patronales</b></label><b style="text-align:right">${nf2.format(sumP(c.patr)*100)} %</b></div></div>
+  </div>`;
+}
+const CAT=[
+['CNJE','CNJE : JEH client hors de 80–450 €','Étude en mode CNJE dont la JEH client HT sort de la fourchette des Paramètres.'],
+['CNJE','CNJE : JEH intervenant supérieure à 300 €','Une ligne de temps dépasse le plafond de JEH intervenant HT.'],
+['CNJE','CNJE : nb de JEH facturées non entier','Montant ÷ (1 + TVA) ÷ prix de la JEH n’est pas un entier.'],
+['CNJE','CNJE : JEH rémunérées non entières (par intervenant)','Le total des JEH rémunérées d’un intervenant sur une étude n’est pas un entier ; le message donne les prénoms.'],
+['CNJE','CNJE : JEH facturées ≠ JEH rémunérées','Études « Convention étudiant avant réalisation », « En réalisation » ou « Archivée » dont les JEH facturées et rémunérées diffèrent.'],
+['Toutes','Retard de N j (+ 1re relance par mail / 2e relance)','Acompte, intermédiaire ou solde facturé et échéance dépassée.'],
+['Toutes','Archivée mais reste à encaisser','Étude archivée alors que le client doit encore payer.'],
+['Toutes','Archivée sans solde encaissé','Étude archivée alors que le solde n’est pas marqué encaissé.'],
+['Toutes','Archivée mais BV non payés','Étude archivée alors qu’un intervenant est encore « À payer ».'],
+['Toutes','Encaissé supérieur au montant','Erreur de saisie ou trop-perçu à rembourser.'],
+['Toutes','Facturer l’acompte','Convention signée, convention étudiant avant réalisation ou étude en réalisation sans statut de facture.'],
+['Toutes','Renseigner l’échéance de paiement','Facture émise sans date d’échéance.'],
+['Toutes','Renseigner le temps de travail','Étude en réalisation sans aucune ligne de temps.'],
+['Toutes','Prix de la JEH manquant','Des lignes de temps existent mais la JEH client HT est vide (écrire 0 si c’est voulu).'],
+['Toutes','Rémunérations supérieures au montant HT','Les rémunérations dépassent le montant de l’étude.'],
+['Toutes','Payer les BV','Solde encaissé, intervenants encore « À payer ».'],
+['Toutes','Tout est soldé : archiver l’étude','Solde encaissé, BV payés, rien à encaisser.'],
+['Toutes','Étude refusée mais facturée','Statut refusé avec une facture ou un encaissement.'],
+['Toutes','Solde encaissé mais reste à encaisser','Montant ou encaissé à corriger.'],
+['Toutes','Solde encaissé (Factures) mais statut Facture différent','Un paiement « Solde encaissé » existe dans Factures alors que le suivi n’est pas sur « Solde encaissé ».'],
+['Toutes','Renseigner la date de création','L’étude n’est rattachée à aucun mandat.'],
+['Toutes','N° d’étude en double','Deux lignes avec le même numéro.']];
+function vLegende(D){
+  return `<h2>Légende</h2><div class="two" style="margin-top:8px">
+  <div class="card"><h3>Comment ça marche</h3><ul style="margin:6px 0 0;padding-left:18px">
+   <li>Cases claires : à saisir. Cases teintées : calculées automatiquement.</li>
+   <li>Le <b>mandat</b> se déduit de la date (Paramètres).</li>
+   <li>L’<b>encaissé</b> d’une étude est la somme de ses paiements dans l’onglet Factures.</li>
+   <li>La <b>JEH rémunérée</b> d’une ligne de temps = minutes ÷ 480 ÷ nombre de personnes.</li>
+   <li>Une ligne de temps « Payé », « A venir » ou « Non effectué » n’est jamais à payer.</li>
+   <li>Tout est enregistré automatiquement, sur tous vos appareils.</li></ul></div>
+  <div class="card"><h3>BV (bulletins de versement)</h3><ul style="margin:6px 0 0;padding-left:18px"><li><b>À payer</b> : au moins une ligne à verser.</li><li><b>À venir</b> : prévu, pas encore dû.</li><li><b>Payé</b> : toutes les lignes sont payées.</li><li><b>Non effectué</b> : le travail n’a pas eu lieu.</li></ul></div></div>
+  <h2 style="margin-top:18px">Catalogue des alertes</h2><div class="tw"><table><thead><tr><th>Type</th><th>Alerte</th><th>Quand elle s’affiche</th></tr></thead><tbody>${CAT.map(r=>`<tr><td style="padding:6px 8px">${r[0]}</td><td style="padding:6px 8px"><b>${esc(r[1])}</b></td><td style="padding:6px 8px">${esc(r[2])}</td></tr>`).join('')}</tbody></table></div>`;
+}
+
+/* ---------- événements ---------- */
+function setPath(o,p,v){const k=p.split('.');let t=o;for(let i=0;i<k.length-1;i++){t[k[i]]=t[k[i]]||{};t=t[k[i]]}t[k[k.length-1]]=v}
+function ensureCfg(){if(!S.cfg)S.cfg=JSON.parse(JSON.stringify(DEFAULT_CFG));S.cfg.cot=Object.assign({},DEFAULT_CFG.cot,S.cfg.cot);S.cfg.patr=Object.assign({},DEFAULT_CFG.patr,S.cfg.patr);S.cfg.cnje=Object.assign({},DEFAULT_CFG.cnje,S.cfg.cnje);if(!S.cfg.mandats)S.cfg.mandats=[];return S.cfg}
+document.addEventListener('input',e=>{if(e.target.matches('#view input:not([type=date]),#view textarea'))dirty=true});
+document.addEventListener('change',e=>{
+  const t=e.target;dirty=false;
+  if(t.id==='msel'){mandatSel=t.value;lsSet('suivi.mandat',mandatSel);render();return}
+  if(t.dataset.c){
+    const col=t.dataset.c,id=t.dataset.id,f=t.dataset.f;let v=t.value;if(t.type==='number')v=v===''?null:Number(v);
+    if(S[col][id]){S[col][id][f]=v;saveRow(col,id)}
+    render();
+  }else if(t.dataset.lvl!==undefined){
+    const n=t.dataset.lvl,k='f_'+n.toLowerCase().replace(/[^a-z0-9]+/g,'_');
+    const doc=S.formation[k]||(S.formation[k]={nom:n,niveaux:{}});doc.nom=n;doc.niveaux=doc.niveaux||{};
+    if(t.value==='')delete doc.niveaux[t.dataset.etude];else doc.niveaux[t.dataset.etude]=Number(t.value);
+    save('formation/'+k,doc);render();
+  }else if(t.dataset.cfg){
+    const c=ensureCfg();let v=t.type==='date'?t.value:(t.value===''?null:Number(t.value));
+    if(t.dataset.pct&&v!==null)v=v/100;
+    setPath(c,t.dataset.cfg,v===null?0:v);saveCfg();render();
+  }else if(t.dataset.list){
+    const c=ensureCfg();c[t.dataset.list]=t.value.split('\n').map(s=>s.trim()).filter(Boolean);saveCfg();render();
+  }else if(t.dataset.mand!==undefined){
+    const c=ensureCfg();c.mandats[+t.dataset.mand][t.dataset.k]=t.value;saveCfg();render();
+  }
+});
+document.addEventListener('submit',e=>{if(e.target.id==='lf'){e.preventDefault();doLogin()}});
+document.addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  if(b.dataset.eye){const i=$('#cp'),show=i.type==='password';i.type=show?'text':'password';b.setAttribute('aria-pressed',show);b.classList.toggle('on',show);b.setAttribute('aria-label',show?'Masquer le mot de passe':'Afficher le mot de passe');return}
+  if(b.dataset.reconnect){sSet('suivi.pw','');location.reload();return}
+  if(b.dataset.syncon){doSync();return}
+  if(b.dataset.resetpw){lsSet('suivi.h','');sSet('suivi.pw','');location.reload();return}
+  if(b.dataset.syncoff){lsSet('suivi.url','');location.reload();return}
+  if(b.dataset.tab){tab=b.dataset.tab;lsSet('suivi.tab',tab);render();window.scrollTo(0,0);return}
+  if(b.dataset.add){
+    const a=b.dataset.add;
+    if(a==='etudes')addRow('etudes',{date:dstr(TODAY),client:'',num:'',resume:'',statut:'Faisabilité',facture:'',jeh:null,montant:null,echeance:''});
+    if(a==='factures')addRow('factures',{date:dstr(TODAY),etude:'',montant:null,note:''});
+    if(a==='temps')addRow('temps',{date:dstr(TODAY),prenom:'',etude:'',note:'',min:null,nb:1,jeh:null,statut:'Pas payé'});
+    return}
+  if(b.dataset.addmand){const c=ensureCfg();c.mandats.push({nom:'Nouveau mandat',debut:'',fin:''});saveCfg();render();return}
+  if(b.dataset.delmand!==undefined){if(b.dataset.arm){const c=ensureCfg();c.mandats.splice(+b.dataset.delmand,1);saveCfg();render()}else{b.dataset.arm='1';b.textContent='Sûr ?';b.className='b warn';setTimeout(()=>{if(b.isConnected){delete b.dataset.arm;b.textContent='✕';b.className='x'}},3000)}return}
+  if(b.dataset.del){
+    if(b.dataset.arm){const [col,id]=b.dataset.del.split(':');del(col,id);render()}
+    else{b.dataset.arm='1';b.textContent='Sûr ?';b.className='b warn';setTimeout(()=>{if(b.isConnected){delete b.dataset.arm;b.textContent='✕';b.className='x'}},3000)}
+  }
+});
+
+/* ---------- démarrage ---------- */
+async function api(body){
+  const c=CONN();
+  const r=await fetch(c.url,{method:'POST',body:JSON.stringify(Object.assign({pass:c.pass},body)),redirect:'follow'});
+  const j=await r.json();
+  if(j&&j.error)throw new Error(j.error);
+  return j;
+}
+function makeDb(){
+  const c=CONN();const local=!c.url;
+  const subs=[];let cache=null,pending=0,loading=false;
+  try{cache=JSON.parse(lsGet('suivi.cache')||'null')}catch(e){cache=null}
+  if(local&&!cache)cache={};
+  const colSnap=col=>({docs:Object.keys(cache[col]||{}).map(id=>({id,exists:true,data:()=>cache[col][id]}))});
+  const emit=()=>subs.forEach(s=>{try{s.fire()}catch(e){}});
+  const keep=()=>{try{lsSet('suivi.cache',JSON.stringify(cache))}catch(e){}};
+  async function load(first){
+    if(local)return;
+    if(loading||pending>0||outbox.length)return;loading=true;
+    try{cache=await api({action:'loadAll'});keep();stamp();if(dbErr){dbErr='';renderStatus()}emit()}
+    catch(e){
+      if(String(e.message)==='auth'){dbErr='Le script Google refuse le mot de passe : il doit être identique à celui de l’appli (MOT_DE_PASSE dans le script).';renderStatus();subs.forEach(s=>s.err&&s.err({code:'invalid_argument'}))}
+      else if(cache){dbErr='Hors connexion : dernière version enregistrée affichée, les modifications ne sont pas possibles pour le moment.';renderStatus()}
+      else if(first)subs.forEach(s=>s.err&&s.err({code:'unavailable'}));
+    }
+    loading=false;
+  }
+  if(!local)setInterval(()=>{if(!document.hidden){outbox.length?flush():load(false)}},8000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden){outbox.length?flush():load(false)}});
+  window.addEventListener('online',()=>{outbox.length?flush():load(false)});
+  setTimeout(()=>load(true),0);
+  let outbox=[];try{outbox=JSON.parse(lsGet('suivi.outbox')||'[]')}catch(e){outbox=[]}
+  const saveOut=()=>lsSet('suivi.outbox',JSON.stringify(outbox));
+  let flushing=false;
+  async function flush(){
+    if(flushing)return;flushing=true;pending++;
+    try{while(outbox.length){await api(outbox[0]);outbox.shift();saveOut()}stamp();
+      if(dbErr&&/Enregistrement|Hors connexion/.test(dbErr)){dbErr='';renderStatus()}}
+    catch(e){dbErr='Hors connexion : vos modifications sont gardées sur cet appareil et partiront vers Drive dès le retour du réseau.';renderStatus()}
+    pending--;flushing=false;
+  }
+  const write=(body)=>{keep();if(local){stamp();return Promise.resolve()}outbox.push(body);saveOut();flush();return Promise.resolve()};
+  if(outbox.length)setTimeout(flush,0);
+  return {
+    sync:async()=>{if(local)return;await flush();await load(false)},
+    collection(col){return {onSnapshot(next,err){const s={err,fire:()=>cache&&next(colSnap(col))};subs.push(s);if(cache)setTimeout(s.fire,0);return()=>{const i=subs.indexOf(s);if(i>=0)subs.splice(i,1)}}}},
+    doc(path){const [c,i]=path.split('/');return {
+      set:d=>{cache=cache||{};(cache[c]=cache[c]||{})[i]=JSON.parse(JSON.stringify(d));return write({action:'save',col:c,id:i,json:JSON.stringify(d)})},
+      delete:()=>{if(cache&&cache[c])delete cache[c][i];return write({action:'delete',col:c,id:i})},
+      onSnapshot(next,err){const s={err,fire:()=>cache&&next({exists:!!(cache[c]&&cache[c][i]),data:()=>cache[c]&&cache[c][i]})};subs.push(s);if(cache)setTimeout(s.fire,0);return()=>{const k=subs.indexOf(s);if(k>=0)subs.splice(k,1)}}}}
+  };
+}
+
+
+/* ---------- appareils connectés ---------- */
+const devId=()=>{let d=lsGet('suivi.dev');if(!d){d=newId('d');lsSet('suivi.dev',d)}return d};
+const guessDev=()=>{const u=navigator.userAgent||'';const m=u.match(/Android[^;]*;\s*([^)]+?)\s*(?:Build|\))/);let n=m?m[1]:/Android/.test(u)?'Android':/iPhone|iPad/.test(u)?'iPhone / iPad':'Ordinateur';return (/Mobile/.test(u)?'Téléphone':/Android/.test(u)?'Tablette':'')+(m?' ('+n+')':'')||n};
+const devName=()=>lsGet('suivi.devname')||guessDev()||'Appareil';
+let lastBeat=0;
+function heartbeat(force){
+  if(!db||!lsGet('suivi.url'))return;
+  if(!force&&Date.now()-lastBeat<4*60000)return;lastBeat=Date.now();
+  const o={nom:devName(),last:new Date().toISOString(),v:VERSION};
+  S.devs=S.devs||{};S.devs[devId()]=o;db.doc('appareils/'+devId()).set(o).catch(()=>{});
+}
+const ago=t=>{const m=Math.round((Date.now()-new Date(t))/60000);return m<2?'à l’instant':m<60?'il y a '+m+' min':m<1440?'il y a '+Math.round(m/60)+' h':'il y a '+Math.round(m/1440)+' j'};
+function devCard(){
+  const u=lsGet('suivi.url');
+  if(!u)return `<div class="card" style="margin-top:12px"><h3>Appareils connectés</h3><div class="small">Activez la synchronisation (Menu → Synchroniser avec mon Drive) pour voir ici vos autres appareils.</div></div>`;
+  const me=devId(),devs=Object.entries(S.devs||{}).sort((a,b)=>(b[1].last||'').localeCompare(a[1].last||''));
+  const rows=devs.map(([id,d])=>{const on=Date.now()-new Date(d.last)<12*60000;return `<div class="dev"><span class="dot${on?' on':''}"></span><div class="nm"><b>${esc(d.nom||'Appareil')}</b>${id===me?' <span class="small">(cet appareil)</span>':''}<div class="small">${on?'Actif':'Vu'} ${esc(ago(d.last))}</div></div>${id===me?'':`<button class="x" data-deldev="${esc(id)}" aria-label="Retirer cet appareil" title="Retirer de la liste">✕</button>`}</div>`}).join('');
+  return `<div class="card" style="margin-top:12px"><h3>Appareils connectés</h3><div class="small" style="margin-bottom:6px">Les appareils qui ont ouvert l’appli avec cette synchronisation. « Actif » = vu depuis moins de 12 minutes.</div>${rows||'<div class="small">Aucun appareil pour le moment.</div>'}<label class="small" for="devn" style="display:block;margin-top:10px">Nom de cet appareil</label><input id="devn" value="${esc(devName())}" style="width:100%;margin-top:4px"></div>`;
+}
+
+/* ---------- thème ---------- */
+const THEME=()=>lsGet('suivi.theme')||'auto';
+function applyTheme(){const t=THEME(),r=document.documentElement;if(t==='auto')r.removeAttribute('data-theme');else r.setAttribute('data-theme',t);
+  const dark=t==='dark'||(t==='auto'&&window.matchMedia&&matchMedia('(prefers-color-scheme:dark)').matches);
+  const m=document.querySelector('meta[name=theme-color]');if(m)m.content=dark?'#121014':'#FBF6F9'}
+applyTheme();
+/* ---------- menu : synchro, import, export, sauvegardes ---------- */
+const VERSION=11;
+const stamp=()=>{try{lsSet('suivi.last',new Date().toISOString());if(window.sheetRefresh)window.sheetRefresh()}catch(e){}};
+const fmtLast=()=>{const t=lsGet('suivi.last');if(!t)return '';const d=new Date(t);if(isNaN(d))return '';return d.toLocaleDateString('fr-FR',{day:'numeric',month:'short'})+' à '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})};
+const snapData=()=>JSON.parse(JSON.stringify({etudes:S.etudes,factures:S.factures,temps:S.temps,formation:S.formation,config:S.cfg||null}));
+const countData=d=>`${Object.keys(d.etudes||{}).length} études · ${Object.keys(d.factures||{}).length} factures · ${Object.keys(d.temps||{}).length} lignes de temps`;
+const hasData=d=>['etudes','factures','temps','formation'].some(c=>Object.keys(d[c]||{}).length);
+function getBk(){try{return JSON.parse(lsGet('suivi.bk')||'[]')}catch(e){return []}}
+function snap(force){
+  const d=snapData();if(!hasData(d))return;
+  const bk=getBk(),js=JSON.stringify(d);
+  if(bk.length&&JSON.stringify(bk[0].d)===js)return;
+  if(!force&&bk.length&&Date.now()-new Date(bk[0].t)<12*3600*1000)return;
+  bk.unshift({t:new Date().toISOString(),d});
+  while(bk.length>6)bk.pop();
+  try{lsSet('suivi.bk',JSON.stringify(bk))}catch(e){bk.pop();try{lsSet('suivi.bk',JSON.stringify(bk.slice(0,3)))}catch(x){}}
+}
+function replaceAll(d){
+  ['etudes','factures','temps','formation'].forEach(col=>{
+    Object.keys(S[col]).forEach(id=>{if(!(d[col]&&d[col][id]))del(col,id)});
+    Object.keys(d[col]||{}).forEach(id=>{S[col][id]=JSON.parse(JSON.stringify(d[col][id]));saveRow(col,id)});
+  });
+  if(d.config){S.cfg=JSON.parse(JSON.stringify(d.config));saveCfg()}
+  render();setTimeout(()=>snap(true),400);
+}
+const nrm=t=>String(t==null?'':t).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
+const colIdx=r=>{let n=0;for(const ch of r.replace(/[0-9]/g,''))n=n*26+ch.charCodeAt(0)-64;return n-1};
+async function unzip(buf){
+  const u=new Uint8Array(buf),dv=new DataView(buf);let e=u.length-22;
+  while(e>=0&&dv.getUint32(e,true)!==0x06054b50)e--;
+  if(e<0)throw new Error('zip');
+  const n=dv.getUint16(e+10,true);let p=dv.getUint32(e+16,true);const out={};
+  for(let i=0;i<n;i++){
+    const m=dv.getUint16(p+10,true),cs=dv.getUint32(p+20,true),nl=dv.getUint16(p+28,true),xl=dv.getUint16(p+30,true),cl=dv.getUint16(p+32,true),lo=dv.getUint32(p+42,true);
+    const name=new TextDecoder().decode(u.subarray(p+46,p+46+nl));
+    const ls=lo+30+dv.getUint16(lo+26,true)+dv.getUint16(lo+28,true),raw=u.subarray(ls,ls+cs);
+    if(/\.(xml|rels)$/.test(name)){
+      let bytes=raw;
+      if(m===8){const ds=new DecompressionStream('deflate-raw');const w=ds.writable.getWriter();w.write(raw);w.close();bytes=new Uint8Array(await new Response(ds.readable).arrayBuffer())}
+      out[name]=new TextDecoder().decode(bytes);
+    }
+    p+=46+nl+xl+cl;
+  }
+  return out;
+}
+async function readXlsx(buf){
+  const f=await unzip(buf),X=t=>new DOMParser().parseFromString(t,'application/xml');
+  const wb=X(f['xl/workbook.xml']),rels=X(f['xl/_rels/workbook.xml.rels']);
+  const relT={};[...rels.getElementsByTagName('Relationship')].forEach(r=>{let t=r.getAttribute('Target');t=t.startsWith('/')?t.slice(1):'xl/'+t;relT[r.getAttribute('Id')]=t});
+  const sst=[];if(f['xl/sharedStrings.xml'])[...X(f['xl/sharedStrings.xml']).getElementsByTagName('si')].forEach(si=>sst.push([...si.getElementsByTagName('t')].map(t=>t.textContent).join('')));
+  const dateXf=[];
+  if(f['xl/styles.xml']){
+    const st=X(f['xl/styles.xml']),cust={};[...st.getElementsByTagName('numFmt')].forEach(n=>cust[n.getAttribute('numFmtId')]=n.getAttribute('formatCode'));
+    const xfs=st.getElementsByTagName('cellXfs')[0];
+    if(xfs)[...xfs.getElementsByTagName('xf')].forEach(x=>{const id=x.getAttribute('numFmtId');dateXf.push((+id>=14&&+id<=22)||(cust[id]&&/[dmy]/i.test(cust[id].replace(/"[^"]*"|\[[^\]]*\]|\\./g,''))&&!/0\.0|#/.test(cust[id])))});
+  }
+  const out={};
+  for(const sh of wb.getElementsByTagName('sheet')){
+    const rid=sh.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id')||sh.getAttribute('r:id');
+    const xml=f[relT[rid]];if(!xml)continue;
+    const rows=[];
+    [...X(xml).getElementsByTagName('row')].forEach(r=>{
+      const arr=[];
+      [...r.getElementsByTagName('c')].forEach(c=>{
+        const t=c.getAttribute('t'),v=c.getElementsByTagName('v')[0],i=c.getElementsByTagName('is')[0];let val='';
+        if(t==='s'&&v)val=sst[+v.textContent]||'';
+        else if(t==='inlineStr'&&i)val=[...i.getElementsByTagName('t')].map(x=>x.textContent).join('');
+        else if(v){if(t==='str'||t==='e')val=v.textContent;else if(t==='b')val=v.textContent==='1';else{const num=Number(v.textContent);val=dateXf[+c.getAttribute('s')]&&num>0?new Date(Date.UTC(1899,11,30)+Math.round(num*86400000)).toISOString().slice(0,10):num}}
+        const ref=c.getAttribute('r');arr[ref?colIdx(ref):arr.length]=val;
+      });
+      rows[+r.getAttribute('r')-1]=arr;
+    });
+    out[sh.getAttribute('name')]=Array.from(rows,r=>r||[]);
+  }
+  return out;
+}
+function readCsv(t){
+  t=t.replace(/^﻿/,'');const first=t.split(/\r?\n/)[0]||'',sep=(first.match(/;/g)||[]).length>=(first.match(/,/g)||[]).length?';':',';
+  const rows=[];let row=[],cur='',q=false;
+  for(let i=0;i<t.length;i++){const ch=t[i];
+    if(q){if(ch==='"'){if(t[i+1]==='"'){cur+='"';i++}else q=false}else cur+=ch}
+    else if(ch==='"')q=true;else if(ch===sep){row.push(cur);cur=''}
+    else if(ch==='\n'||ch==='\r'){if(ch==='\r'&&t[i+1]==='\n')i++;row.push(cur);rows.push(row);row=[];cur=''}
+    else cur+=ch}
+  if(cur!==''||row.length){row.push(cur);rows.push(row)}
+  return {Feuille:rows};
+}
+const toISO=v=>{if(v===''||v==null)return '';v=String(v).trim();let m=v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);if(m)return m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0');m=v.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/);if(m)return (m[3].length===2?'20'+m[3]:m[3])+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');return v};
+const toNum=v=>{if(v===''||v==null)return null;if(typeof v==='number')return v;const n=Number(String(v).replace(/[\s €]/g,'').replace(',','.'));return isNaN(n)?null:n};
+const SPEC={
+ etudes:{p:'e',key:['client','num'],f:{date:['date','dateouverture'],client:['client'],num:['netude','numetude','num','numero','etude'],resume:['resume','objet','description'],statut:['statut','statutetude'],facture:['facture','statutfacture','statutdelafacture'],jeh:['jeh','nbjeh'],montant:['montant','montantht'],echeance:['echeance']},d:['date','echeance'],n:['jeh','montant']},
+ factures:{p:'f',key:['etude','montant'],f:{date:['date'],etude:['netude','numetude','etude','num'],montant:['montant','montantht','montantttc'],note:['note','commentaire','statut']},d:['date'],n:['montant']},
+ temps:{p:'t',key:['prenom','etude'],f:{date:['date'],prenom:['prenom','nom','etudiant','intervenant'],etude:['netude','numetude','etude','num'],note:['note','commentaire','tache'],min:['minutes','min','duree'],nb:['nombre','nb','nbdepersonnes','nbpersonnes'],jeh:['jeh','jehdeletude','jehetude'],statut:['statut','statutdupaiement','paiement']},d:['date'],n:['min','nb','jeh']},
+ mandats:{key:['nom'],f:{nom:['nom','mandat'],debut:['debut','datededebut','datedebut'],fin:['fin','datedefin','datefin']},d:['debut','fin'],n:[]}
+};
+function mapSheet(kind,rows){
+  const sp=SPEC[kind];let hi=rows.findIndex(r=>r&&r.filter(x=>x!==''&&x!=null).length>=2);if(hi<0)return [];
+  const H=rows[hi].map(nrm),idx={};
+  for(const k in sp.f){const j=H.findIndex(h=>h&&sp.f[k].includes(h));if(j>=0)idx[k]=j}
+  const out=[];
+  rows.slice(hi+1).forEach(r=>{
+    if(!r||!r.some(x=>x!==''&&x!=null))return;
+    const o={};
+    for(const k in sp.f){let v=idx[k]!==undefined?r[idx[k]]:'';if(v==null)v='';
+      if(sp.d.includes(k))v=toISO(v);else if(sp.n.includes(k))v=toNum(v);else v=String(v).trim();o[k]=v}
+    if(sp.key.every(k=>o[k]===''||o[k]==null))return;
+    out.push(o);
+  });
+  return out;
+}
+const guessKind=rows=>{const h=new Set((rows.find(r=>r&&r.filter(Boolean).length>=2)||[]).map(nrm));return h.has('client')?'etudes':h.has('prenom')||h.has('minutes')?'temps':h.has('debut')?'mandats':h.has('montant')&&(h.has('etude')||h.has('netude'))?'factures':null};
+async function parseFile(file){
+  const name=file.name.toLowerCase();
+  if(name.endsWith('.json')){
+    const j=JSON.parse(await file.text());const d=j.data||j;
+    if(!d||typeof d!=='object'||!('etudes' in d||'temps' in d||'config' in d))throw new Error('Ce fichier .json n’est pas une sauvegarde de cette appli.');
+    return {kind:'json',d};
+  }
+  let sheets;
+  if(name.endsWith('.csv')||name.endsWith('.txt'))sheets=readCsv(await file.text());
+  else if(name.endsWith('.xlsx'))sheets=await readXlsx(await file.arrayBuffer());
+  else throw new Error('Format non reconnu : utilisez un fichier .xlsx, .csv ou .json.');
+  const res={etudes:[],factures:[],temps:[],mandats:[]};
+  for(const sn of Object.keys(sheets)){
+    const n=nrm(sn);let kind=n.startsWith('etude')?'etudes':n.startsWith('facture')?'factures':n.startsWith('temps')?'temps':n.startsWith('mandat')?'mandats':guessKind(sheets[sn]);
+    if(kind)res[kind]=res[kind].concat(mapSheet(kind,sheets[sn]));
+  }
+  if(!res.etudes.length&&!res.factures.length&&!res.temps.length&&!res.mandats.length)throw new Error('Aucune donnée reconnue : utilisez le fichier modèle (feuilles Études, Factures, Temps, Mandats).');
+  return {kind:'rows',rows:res};
+}
+function applyRows(R,replace){
+  snap(true);
+  [['etudes','e'],['factures','f'],['temps','t']].forEach(([col,p])=>{
+    if(!R[col].length)return;
+    if(replace)Object.keys(S[col]).forEach(id=>del(col,id));
+    let base=replace?0:Math.max(0,...Object.values(S[col]).map(o=>o.ord||0));
+    R[col].forEach((o,i)=>{const id=newId(p)+i;S[col][id]=Object.assign({ord:base+i+1},o);saveRow(col,id)});
+  });
+  if(R.mandats.length){const c=ensureCfg();if(replace)c.mandats=[];R.mandats.forEach(m=>{if(!c.mandats.some(x=>x.nom===m.nom))c.mandats.push({nom:m.nom,debut:m.debut,fin:m.fin})});saveCfg()}
+  render();setTimeout(()=>snap(true),400);
+}
+function download(name,text,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500)}
+let sheetView=null,imp=null;
+function sheetHTML(){
+  const u=lsGet('suivi.url'),last=fmtLast(),bk=getBk();
+  const back='<button class="mb ghost" data-mn="home">‹ Retour</button>';
+  if(sheetView==='addr')return `<h2>Adresse du script Google</h2><div class="small" style="margin-bottom:10px">À saisir une seule fois : adresse de l’application Web de votre script (elle finit par /exec). Vos données actuelles seront envoyées dans votre Drive si celui-ci est vide.</div><input id="syu" type="url" value="${esc(u||'')}" style="width:100%;margin-bottom:8px" placeholder="https://script.google.com/macros/s/…/exec" autocapitalize="off" autocomplete="off"><div class="msg" id="sym" hidden></div><button class="mb solid" data-mn="syncon">Enregistrer et synchroniser</button>${u?'<button class="mb" data-mn="syncoff">Désactiver sur cet appareil</button>':''}<button class="mb" data-mn="resetpw">Retaper le mot de passe de l’appli</button>${back}`;
+  if(sheetView==='import')return `<h2>Importer un fichier</h2><div class="small" style="margin-bottom:10px">Fichier modèle Excel (.xlsx), tableau .csv, ou sauvegarde .json exportée depuis l’appli.</div><input type="file" id="imf" accept=".xlsx,.csv,.txt,.json,application/json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="width:100%"><div class="msg" id="imm" hidden></div><div id="imb"></div>${back}`;
+  if(sheetView==='restore')return `<h2>Restaurer une sauvegarde</h2><div class="small" style="margin-bottom:10px">Les 6 dernières sauvegardes automatiques de cet appareil. Restaurer remplace toutes les données actuelles (une sauvegarde de l’état actuel est faite avant).</div>${bk.length?bk.map((b,i)=>`<button class="mb" data-mn="rest" data-i="${i}"><span class="t">${esc(new Date(b.t).toLocaleDateString('fr-FR',{day:'numeric',month:'long'})+' à '+new Date(b.t).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}))}</span><span class="s">${esc(countData(b.d))}</span></button>`).join(''):'<div class="small">Aucune sauvegarde pour le moment : elles se créent toutes seules.</div>'}${back}`;
+  return `<div class="shead"><h2>Menu</h2><button class="mx" data-mn="close" aria-label="Fermer">✕</button></div>
+  <div class="mrow"><button class="mb" data-mn="sync"><span class="t">Synchroniser avec mon Drive</span><span class="s">${u?(last?'Dernière sauvegarde : '+esc(last):'Pas encore synchronisé'):'Non configuré : appuyez sur le crayon'}</span></button><button class="mb sq" data-mn="addr" aria-label="Modifier l’adresse du script"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 3.5l4 4L8 20l-5 1 1-5z"/><path d="M13 21h8"/></svg></button></div>
+  <div class="msg" id="mm" hidden></div>
+  <button class="mb" data-mn="import"><span class="t">Importer un fichier</span><span class="s">Tableur (Excel, CSV) ou sauvegarde (.json)</span></button>
+  <button class="mb" data-mn="export"><span class="t">Exporter mes données (format .json)</span></button>
+  <button class="mb" data-mn="restore"><span class="t">Restaurer une ancienne sauvegarde (${bk.length})</span></button>
+  <div class="thm" role="group" aria-label="Affichage"><span class="small">Affichage</span>${[['auto','Selon le système'],['light','Clair'],['dark','Sombre']].map(([v,l])=>`<button data-mn="theme" data-v="${v}" aria-pressed="${THEME()===v}">${l}</button>`).join('')}</div>
+  <button class="mb" data-mn="logout"><span class="t">Se déconnecter</span><span class="s">Le mot de passe sera redemandé</span></button>
+  <div class="small" style="text-align:center;margin-top:10px">Version ${VERSION}</div>`;
+}
+function drawSheet(){const el=$('#sheet');if(!el)return;if(!sheetView){el.hidden=true;el.innerHTML='';return}el.hidden=false;el.innerHTML=`<div class="sbg" data-mn="close"></div><div class="sc" role="dialog" aria-modal="true">${sheetHTML()}</div>`}
+window.sheetRefresh=()=>{if(sheetView==='home')drawSheet()};
+function openSheet(v){sheetView=v;imp=null;drawSheet()}
+const mmsg=(t,bad)=>{const m=$('#mm');if(m){m.textContent=t;m.className='msg'+(bad?' err':'');m.hidden=false}};
+document.addEventListener('click',e=>{const b=e.target.closest('[data-deldev]');if(!b)return;if(!b.dataset.arm){b.dataset.arm='1';b.textContent='Sûr ?';b.className='b warn';setTimeout(()=>{if(b.isConnected){delete b.dataset.arm;b.textContent='✕';b.className='x'}},3000);return}const id=b.dataset.deldev;if(S.devs)delete S.devs[id];if(db)db.doc('appareils/'+id).delete().catch(()=>{});render()});
+document.addEventListener('click',async e=>{
+  const b=e.target.closest('[data-mn]');if(!b)return;
+  const a=b.dataset.mn;
+  if(a==='close'){sheetView=null;drawSheet();return}
+  if(['home','addr','import','restore'].includes(a)){openSheet(a);return}
+  if(a==='sync'){
+    if(!lsGet('suivi.url')){openSheet('addr');return}
+    mmsg('Synchronisation…');
+    try{await db.sync();stamp();drawSheet();mmsg('Synchronisé.')}catch(x){mmsg('Synchronisation impossible pour le moment.',1)}
+    return}
+  if(a==='logout'){sSet('suivi.pw','');location.reload();return}
+  if(a==='theme'){lsSet('suivi.theme',b.dataset.v);applyTheme();drawSheet();return}
+  if(a==='syncon'){doSync();return}
+  if(a==='syncoff'){lsSet('suivi.url','');location.reload();return}
+  if(a==='resetpw'){lsSet('suivi.h','');sSet('suivi.pw','');location.reload();return}
+  if(a==='export'){
+    const d=new Date().toISOString().slice(0,10);
+    download('suivi-etudes-'+d+'.json',JSON.stringify({format:'suivi-etudes',version:1,date:new Date().toISOString(),data:snapData()},null,1),'application/json');
+    mmsg('Fichier exporté : cherchez-le dans vos Téléchargements.');return}
+  if(a==='rest'){
+    if(!b.dataset.arm){b.dataset.arm='1';const t=b.querySelector('.t');b.dataset.old=t.textContent;t.textContent='Appuyez encore pour restaurer';setTimeout(()=>{if(b.isConnected&&b.dataset.arm){delete b.dataset.arm;t.textContent=b.dataset.old}},3500);return}
+    const bk=getBk()[+b.dataset.i];if(!bk)return;
+    snap(true);replaceAll(bk.d);sheetView=null;drawSheet();return}
+  if(a==='impadd'||a==='imprep'){
+    if(a==='imprep'&&!b.dataset.arm){b.dataset.arm='1';b.textContent='Appuyez encore : tout sera remplacé';setTimeout(()=>{if(b.isConnected){delete b.dataset.arm;b.textContent='Remplacer mes données par celles du fichier'}},3500);return}
+    if(imp.kind==='json'){snap(true);replaceAll(imp.d)}else applyRows(imp.rows,a==='imprep');
+    sheetView=null;drawSheet();return}
+});
+document.addEventListener('change',async e=>{
+  if(e.target.id==='devn'){lsSet('suivi.devname',e.target.value.trim());heartbeat(true);return}
+  if(e.target.id!=='imf')return;
+  const f=e.target.files[0],m=$('#imm'),box=$('#imb');if(!f)return;
+  const say=(t,bad)=>{m.textContent=t;m.className='msg'+(bad?' err':'');m.hidden=false};
+  say('Lecture du fichier…');box.innerHTML='';
+  try{
+    imp=await parseFile(f);
+    if(imp.kind==='json'){
+      say('Sauvegarde reconnue : '+countData(imp.d)+'.');
+      box.innerHTML='<button class="mb solid" data-mn="imprep">Remplacer mes données par celles du fichier</button>';
+    }else{
+      const R=imp.rows;
+      say('Fichier reconnu : '+R.etudes.length+' études · '+R.factures.length+' factures · '+R.temps.length+' lignes de temps · '+R.mandats.length+' mandats.');
+      box.innerHTML='<button class="mb solid" data-mn="impadd">Ajouter à mes données</button><button class="mb" data-mn="imprep">Remplacer mes données par celles du fichier</button>';
+    }
+  }catch(x){imp=null;say(x.message||'Lecture impossible.',1)}
+});
+$('#menubtn')&&$('#menubtn').addEventListener('click',()=>openSheet('home'));
+
+function afterSnap(){if(dirty){pendingRender=true;return}render()}
+document.addEventListener('focusout',()=>{if(pendingRender&&!dirty){pendingRender=false;setTimeout(render,0)}});
+render();
+(async function(){
+  if(!UNLOCKED())return;
+  db=makeDb();
+  if(userCap){try{const w=userCap.can&&userCap.can('data.write');if(w===false)canWrite=false}catch(e){}}
+  if(!db){return}
+  const timer=setTimeout(()=>{timeoutNote=true;renderStatus()},10000);
+  const clear=()=>{if(Object.values(loaded).every(Boolean)){clearTimeout(timer);timeoutNote=false;renderStatus()}};
+  const fail=e=>{dbErr=(e&&e.code==='revoked')?'L’accès aux données a été retiré.':'Lecture des données impossible pour le moment.';renderStatus()};
+  ['etudes','factures','temps','formation'].forEach(col=>{
+    db.collection(col).onSnapshot(snap=>{const o={};snap.docs.forEach(d=>{o[d.id]=Object.assign({},d.data())});S[col]=o;loaded[col]=true;clear();afterSnap()},fail);
+  });
+  db.collection('appareils').onSnapshot(snap=>{const o={};snap.docs.forEach(d=>{o[d.id]=Object.assign({},d.data())});S.devs=o;if(tab==='params')afterSnap()},()=>{});
+  setInterval(()=>{if(!document.hidden)heartbeat(false)},60000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)heartbeat(false)});setTimeout(()=>heartbeat(true),2500);
+  db.doc('config/main').onSnapshot(s=>{S.cfg=s.exists?Object.assign({},s.data()):null;loaded.cfg=true;clear();afterSnap();if(Object.values(loaded).every(Boolean)&&!window.__snapped){window.__snapped=1;setTimeout(()=>snap(false),1500)}},fail);
+})();
 })();
