@@ -42,7 +42,7 @@
     if (Array.isArray(d.ex)) d.ex.forEach(function (x) {
       if (x.succes > 5) { var r = runOf(x.id, d.hist); x.p5 = Math.max(0, x.succes - 4 - r.run); x.succes = 5; }
     });
-    return { ex: Array.isArray(d.ex) ? d.ex : [], mats: Array.isArray(d.mats) ? d.mats : [], hist: Array.isArray(d.hist) ? d.hist : [], jours: d.jours && typeof d.jours === 'object' ? d.jours : {}, ues: Array.isArray(d.ues) ? d.ues : [], corbeille: Array.isArray(d.corbeille) ? d.corbeille : [], reglages: r };
+    return { ex: Array.isArray(d.ex) ? d.ex : [], mats: Array.isArray(d.mats) ? d.mats : [], hist: Array.isArray(d.hist) ? d.hist : [], jours: d.jours && typeof d.jours === 'object' ? d.jours : {}, ues: Array.isArray(d.ues) ? d.ues : [], corbeille: Array.isArray(d.corbeille) ? d.corbeille : [], chronos: d.chronos && typeof d.chronos === 'object' ? d.chronos : {}, reglages: r };
   }
   function load() { try { var raw = localStorage.getItem(KEY); if (raw) data = fix(JSON.parse(raw)); } catch (e) { /* départ à vide */ } }
   function save() {
@@ -158,8 +158,15 @@
   /* ---------- vue : à faire aujourd'hui ---------- */
   /* ---------- chronomètre par exercice ---------- */
   var CHK = 'mes-exercices-chrono';
-  function chGetAll() { try { var o = JSON.parse(localStorage.getItem(CHK) || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; } }
-  function chSetAll(o) { try { localStorage.setItem(CHK, JSON.stringify(o)); } catch (e) { /* ignoré */ } }
+  /* les chronos font partie des données : ils suivent donc la synchronisation entre appareils */
+  function chMigrer() { try { var o = JSON.parse(localStorage.getItem(CHK) || 'null'); if (o && typeof o === 'object') { data.chronos = data.chronos || {}; Object.keys(o).forEach(function (id) { if (!data.chronos[id]) data.chronos[id] = { acc: o[id].acc || 0, start: o[id].start || null, t: Date.now() }; }); localStorage.removeItem(CHK); save(); } } catch (e) { /* ignoré */ } }
+  function chGetAll() { var r = {}, st = data.chronos || {}; Object.keys(st).forEach(function (id) { var c = st[id]; if (c && !c.gone) r[id] = { acc: c.acc || 0, start: c.start || null }; }); return r; }
+  function chSetAll(o) {
+    data.chronos = data.chronos || {}; var st = data.chronos, now = Date.now();
+    Object.keys(o).forEach(function (id) { var c = st[id], n = o[id]; if (!c || c.gone || (c.acc || 0) !== (n.acc || 0) || (c.start || null) !== (n.start || null)) st[id] = { acc: n.acc || 0, start: n.start || null, t: now }; });
+    Object.keys(st).forEach(function (id) { if (!st[id].gone && !o[id]) st[id] = { gone: 1, t: now }; });
+    save();
+  }
   function chMs(c) { return c ? (c.acc || 0) + (c.start ? Date.now() - c.start : 0) : 0; }
   function chFmt(ms) { var t = Math.floor(ms / 1000), h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), sec = t % 60; return (h ? h + ':' + ('0' + m).slice(-2) : ('0' + m).slice(-2)) + ':' + ('0' + sec).slice(-2); }
   var CHI = { watch: '<circle cx="12" cy="13.5" r="7.5"/><path d="M12 9.5v4l2.5 1.5M9.5 3h5M12 3v3M18.2 6.8l1.2-1.2"/>', pause: '<path d="M9 6v12M15 6v12"/>', play: '<path d="M8 5.5v13l10-6.5Z"/>', x: '<path d="M7 7l10 10M17 7L7 17"/>', check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>', skip: '<path d="M5 12h12M13 7l5 5-5 5"/>', back: '<path d="M19 12H7M11 7l-5 5 5 5"/>' };
@@ -202,7 +209,7 @@
       var rb = el('button', 'abtn soft'); rb.type = 'button'; rb.appendChild(chSvg(o.rep ? 'back' : 'skip', 14)); rb.appendChild(document.createTextNode(o.rep ? 'Remettre' : 'Reporter'));
       rb.addEventListener('click', function () { if (o.rep) { delete x.reporte; toast('Remis dans ta liste.'); } else { x.reporte = todayISO(); toast('Reporté : ton temps va aux autres exos.'); } save(); render(); });
       var b = el('button', 'abtn main'); b.type = 'button'; b.appendChild(chSvg('check', 18)); b.title = 'Refait'; b.setAttribute('aria-label', 'Refait'); b.addEventListener('click', function () { openDone(x.id); });
-      acts.appendChild(rb); acts.appendChild(b); acts.appendChild(chronoEl(x.id)); c.appendChild(acts);
+      if (withBtn !== 'lite') acts.appendChild(rb); acts.appendChild(b); acts.appendChild(chronoEl(x.id)); c.appendChild(acts);
     }
     c.addEventListener('click', function (e) { if (!e.target.closest('button')) openEditor(x.id); });
     return c;
@@ -277,7 +284,7 @@
       .map(function (x) { return { x: x, r: x.evalue ? revision(x) : 1e9, ex: modeExam(x) }; })
       .sort(function (a, b) { return a.r - b.r; });
     box.appendChild(el('p', 'muted', l.length + ' exercice(s)'));
-    l.slice(0, shown).forEach(function (o) { box.appendChild(exoCard(o, false)); });
+    l.slice(0, shown).forEach(function (o) { box.appendChild(exoCard(o, 'lite')); });
     if (l.length > shown) { var m = el('button', 'row plain', 'Afficher plus'); m.addEventListener('click', function () { shown += 120; renderExos(); }); box.appendChild(m); }
   }
 
@@ -1146,6 +1153,7 @@
     (oth.mats || []).forEach(function (m) { var y = mm[m.semestre + '|' + m.nom]; if (!y) { base.mats.push(m); return; } Object.keys(m).forEach(function (k) { if ((y[k] === undefined || y[k] === '' || y[k] === null) && m[k] !== undefined) y[k] = m[k]; }); });
     var uu = {}; base.ues = base.ues || []; base.ues.forEach(function (u) { uu[u.semestre + '|' + u.nom] = 1; });
     (oth.ues || []).forEach(function (u) { if (!uu[u.semestre + '|' + u.nom]) base.ues.push(u); });
+    base.chronos = base.chronos || {}; var och = oth.chronos || {}; Object.keys(och).forEach(function (id) { var y = base.chronos[id]; if (!y || (och[id].t || 0) > (y.t || 0)) base.chronos[id] = och[id]; });
     return base;
   }
   function syncLabel() {
@@ -1205,14 +1213,14 @@
     if (nm === 'renderToday') renderToday = wrapped; else if (nm === 'renderExos') renderExos = wrapped; else if (nm === 'renderMats') renderMats = wrapped; else if (nm === 'renderDash') renderDash = wrapped; else renderSet = wrapped;
   });
 
-  load();
+  load(); chMigrer();
   document.querySelectorAll('#tabs button').forEach(function (b) { b.addEventListener('click', function () { try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { /* sans vibration */ } view = b.dataset.view; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } shown = 120; window._top = 1; render(); window.scrollTo(0, 0); }); });
   $('addBtn').addEventListener('click', function () { openEditor(null); });
   $('search').addEventListener('input', function () { shown = 120; renderExos(); });
   $('filtBtn').addEventListener('click', function () { $('filtDlg').showModal(); });
   $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
   $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 162'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 164'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
   $('syncUrlBtn').addEventListener('click', function () { $('menu').close(); syncNow(true); });
