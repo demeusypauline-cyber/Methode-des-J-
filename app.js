@@ -608,7 +608,7 @@
         var trk = el('div', 'trk'), fl = el('i', 'fl'); fl.style.width = Math.min(100, (av || 0) / 5 * 100) + '%'; if (av !== null) fl.style.background = scale(av); trk.appendChild(fl);
         for (var q = 1; q < 5; q++) { var tk = el('b', 'tk'); tk.style.left = (q * 20) + '%'; trk.appendChild(tk); }
         var me = el('u', 'me'); me.style.left = Math.min(100, need / 5 * 100) + '%'; me.title = 'Prévision : niveau à avoir aujourd’hui (' + need + ')'; trk.appendChild(me);
-        var trw = el('div', 'trw'); trw.appendChild(trk); if (av !== null) trw.appendChild(el('small', 'ratio', fmt1(Math.round(av * 10) / 10) + ' / ' + fmt1(need))); mid.appendChild(trw); row.appendChild(mid);
+        var trw = el('div', 'trw'); trw.appendChild(trk); if (av !== null && need > 0) { var rt = el('small', 'ratio', Math.round(av / need * 100) + ' %'); rt.title = 'Ta moyenne (' + fmt1(Math.round(av * 10) / 10) + ') par rapport au niveau à avoir aujourd’hui (' + fmt1(need) + ')'; trw.appendChild(rt); } mid.appendChild(trw); row.appendChild(mid);
         var jd = el('div', 'exj'); jd.appendChild(el('b', 'jj', 'J-' + J)); jd.appendChild(el('span', 'dd', fromNum(dn).slice(0, 6) + fromNum(dn).slice(8))); row.appendChild(jd);
         var nt = el('div', 'exn'); if (av !== null) { var fin = 0; es.forEach(function (x) { var pr = occPred(x, dn - 1); fin += Math.min(5, pr.length ? pr[pr.length - 1].n : lvl(x)); }); fin /= es.length; nt.appendChild(nivBadge(Math.round(av * 10) / 10, 'sm')); nt.appendChild(el('span', 'parr', '→')); nt.appendChild(nivBadge(Math.round(fin * 10) / 10, 'sm')); } row.appendChild(nt);
         tb.appendChild(row);
@@ -805,7 +805,7 @@
   /* modèle : note attendue = a0 · e^(−(retard)/τ) ; τ ajusté sur les points en retard. Niveaux 0 à 5 : chacun le sien ; indice 6 = tous les niveaux au-dessus de 5, comptés depuis le jour prévu */
   function fitDecay(Q, a, gOf, I) {
     if (Q.length < MINPTS) return null;
-    var pk = Q.filter(function (p) { return p.pink; }), lt = Q.filter(function (p) { return p.late; }), a0 = Math.max(0.3, pk.length >= 2 ? mean(pk.map(function (p) { return p.n; })) : Math.min(5, a + 1)), tau = Infinity;
+    var pk = Q.filter(function (p) { return p.pink; }), lt = Q.filter(function (p) { return p.rel >= -p.tol; }), a0 = Math.max(0.3, pk.length >= 2 ? mean(pk.map(function (p) { return p.n; })) : Math.min(5, a + 1)), tau = Infinity;
     if (lt.length >= 3) {
       var best = 1e18; for (var T = 2; T <= 600; T = Math.ceil(T * 1.12)) {
         var e = 0; lt.forEach(function (p) { var d = p.n - a0 * Math.exp(-(gOf(p) - I) / T); e += d * d; });
@@ -831,7 +831,8 @@
   }
   function drawOubli(cv) {
     var D = decay(), PA = D.P, sel = data.reglages.oubliNiv; sel = typeof sel === 'number' ? sel : -1;
-    var big = sel === 6, xmin = big ? -20 : 0, xmax = 100;
+    var big = sel === 6, xmin = 0, xmax = 100;
+    if (big) { xmin = -20; PA.forEach(function (p) { if (p.a > 5 && p.rel < xmin) xmin = p.rel; }); xmin = Math.floor(xmin / 10) * 10; }
     function gx(p) { return big ? p.rel : p.g; }
     var P = (sel >= 0 ? PA.filter(function (p) { return big ? p.a > 5 : p.a === sel; }) : PA).filter(function (p) { return gx(p) >= xmin && gx(p) <= xmax; }), PK = P.filter(function (p) { return p.pink; });
     var w = cv.clientWidth || 320, h = Math.round(Math.min(Math.max(220, w * 0.55), 340)), dpr = window.devicePixelRatio || 1;
@@ -841,7 +842,7 @@
     function X(d) { return L0 + (R0 - L0) * (d - xmin) / (xmax - xmin); } function Y(v) { return B - (B - T) * v / 5; }
     g.font = '10px Poppins, system-ui'; g.textAlign = 'right'; g.fillStyle = '#8a6573'; g.strokeStyle = '#f0dde4'; g.lineWidth = 1;
     for (var v = 0; v <= 5; v++) { g.beginPath(); g.moveTo(L0, Y(v)); g.lineTo(R0, Y(v)); g.stroke(); g.fillText(v, L0 - 5, Y(v) + 3); }
-    g.textAlign = 'center'; (big ? [-20, 0, 25, 50, 75, 100] : [0, 10, 25, 50, 75, 100]).forEach(function (d) { g.fillText(big ? (d === 0 ? 'J0' : (d > 0 ? '+' : '') + d + ' j') : d + ' j', X(d), B + 15); });
+    g.textAlign = 'center'; (big ? [xmin].concat(xmin <= -40 ? [] : []).concat([0, 25, 50, 75, 100]) : [0, 10, 25, 50, 75, 100]).forEach(function (d) { g.fillText(big ? (d === 0 ? 'J0' : (d > 0 ? '+' : '') + d + ' j') : d + ' j', X(d), B + 15); });
     g.fillStyle = 'rgba(249,211,224,.55)'; g.fillRect(L0, Y(5), R0 - L0, Y(4.5) - Y(5));
     var iv = big ? [0] : sel >= 0 ? [interval(sel)] : data.reglages.intervalles.slice(0, 6);
     g.setLineDash([3, 3]); g.strokeStyle = '#e0a3b8'; iv.forEach(function (d) { if (d <= xmax) { g.beginPath(); g.moveTo(X(d), T); g.lineTo(X(d), B); g.stroke(); g.fillStyle = '#b55a7c'; g.fillText(big ? 'prévu' : 'J' + d, X(d), T - 3); } }); g.setLineDash([]);
@@ -859,15 +860,15 @@
     /* courbe : rose là où assez de tes points l'appuient, grise là où elle est estimée (pas assez de points) */
     var pts = [], sg = 7, MD = MODEL >= 0 ? (D.lv[MODEL] || (big ? { a: 6, a0: 5, I: 0, tau: Infinity } : { a: sel, a0: Math.min(5, sel + 1), I: interval(sel), tau: Infinity })) : null;
     for (var d = xmin; d <= xmax; d += 1) {
-      var sw = 0, sv = 0; PK.forEach(function (p) { var z = (gx(p) - d) / sg, wgt = Math.exp(-z * z / 2); sw += wgt; sv += wgt * p.n; });
+      var sw = 0, sv = 0; (sel >= 0 ? P : PK).forEach(function (p) { var z = (gx(p) - d) / sg, wgt = Math.exp(-z * z / 2); sw += wgt; sv += wgt * p.n; });
       if (sw >= 3) pts.push({ x: d, y: sv / sw, pink: true });
+      else if (MD) { var ev = Math.min(5, big ? decayAt(MD, Math.max(0, d)) : modelNote(MD, d)), k = sw / 3; pts.push({ x: d, y: sw > 0 ? k * (sv / sw) + (1 - k) * ev : ev, pink: false }); } /* transition douce vers l'estimation */
       else if (sw >= 1.2) pts.push({ x: d, y: sv / sw, pink: false });
-      else if (MD) { var ev = big ? decayAt(MD, Math.max(0, d)) : modelNote(MD, d); pts.push({ x: d, y: Math.min(5, ev), pink: false }); }
     }
     if (pts.length > 1) {
       var runs = [], cur = [pts[0]]; for (var i = 1; i < pts.length; i++) { if (pts[i].pink !== pts[i - 1].pink || pts[i].x - pts[i - 1].x > 1) { cur.push(pts[i]); runs.push(cur); cur = [pts[i]]; } else cur.push(pts[i]); } runs.push(cur);
       runs.forEach(function (run) {
-        if (run.length < 2) return; var pk = run[0].pink && run[run.length - 1].pink;
+        if (run.length < 2) return; var pk = run[0].pink;
         g.beginPath(); run.forEach(function (p, i) { if (i) g.lineTo(X(p.x), Y(p.y)); else g.moveTo(X(p.x), Y(p.y)); });
         g.lineTo(X(run[run.length - 1].x), B); g.lineTo(X(run[0].x), B); g.closePath(); var topY = B; run.forEach(function (p) { topY = Math.min(topY, Y(p.y)); }); var gr = g.createLinearGradient(0, topY, 0, B), k = pk ? 1 : .55; gr.addColorStop(0, 'rgba(248,83,139,' + (.5 * k) + ')'); gr.addColorStop(.6, 'rgba(248,83,139,' + (.16 * k) + ')'); gr.addColorStop(1, 'rgba(248,83,139,0)'); g.fillStyle = gr; g.fill();
         g.strokeStyle = '#ad1457'; g.lineWidth = 3; g.lineJoin = 'round'; g.lineCap = 'round'; g.setLineDash(pk ? [] : [7, 6]); g.beginPath(); run.forEach(function (p, i) { if (i) g.lineTo(X(p.x), Y(p.y)); else g.moveTo(X(p.x), Y(p.y)); }); g.stroke(); g.setLineDash([]);
@@ -1497,7 +1498,7 @@
   $('examBack').addEventListener('click', function () { $('examDlg').close(); });
   $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
   $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; data.reglages.matieres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 174'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 175'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
   $('syncUrlBtn').addEventListener('click', function () { $('menu').close(); syncNow(true); });

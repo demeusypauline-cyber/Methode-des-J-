@@ -518,3 +518,9 @@ dialog.full{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-r
 .trw{display:flex;align-items:center;gap:8px}.trw .trk{flex:1;min-width:0}.ratio{flex:none;font-size:.7rem;color:#8a8087;white-space:nowrap}
 .exn{display:flex;align-items:center;gap:4px}.exn .parr{color:#8a6573;font-size:.8rem}
 .sethead{display:flex;align-items:center;gap:8px;margin-bottom:10px}.sethead h2{margin:0;font-size:1.2rem}
+
+/* v175 */
+.dhead{margin-top:-22px!important}
+#v-set > .sethead,#v-set > .rules{grid-column:1 / -1}
+#v-set > .sethead ~ .scard:last-child:nth-child(even){grid-column:1 / -1}
+#v-set > .scard:only-child{grid-column:1 / -1}
