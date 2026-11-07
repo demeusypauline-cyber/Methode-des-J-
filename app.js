@@ -111,6 +111,26 @@
     data.ex.forEach(function (x) { if (x.evalue === t && visible(x) && !x.ajoute) s += mins(x); });
     return s;
   }
+  /* retard d'une matière sur l'objectif du jour (même repère que la barre des cartes d'examen) : plus il est grand, plus la matière est prioritaire */
+  var DEFC = null;
+  function exDef(x) {
+    DEFC = DEFC || {}; var k = x.semestre + '|' + x.matiere; if (k in DEFC) return DEFC[k];
+    var E = examNum(x.semestre, x.matiere), v = 0;
+    if (E !== null) {
+      var R = data.reglages, J = E - TODAY(), X = Math.max(1, J > R.seuilButoire ? R.butoireSi : R.butoireSinon), need = Math.max(0, Math.min(5, 5 * (1 - Math.max(0, J - X) / Math.max(1, R.debutExam))));
+      var es = data.ex.filter(function (z) { return z.semestre === x.semestre && z.matiere === x.matiere && z.evalue && !z.ajoute; });
+      v = need - (es.length ? mean(es.map(effLvl)) : 0);
+    }
+    return (DEFC[k] = v);
+  }
+  function cmpPrio(a, b) {
+    if (!!a.ex !== !!b.ex) return a.ex ? -1 : 1;
+    var la = a.v ? a.L : prio(a.x), lb = b.v ? b.L : prio(b.x);
+    if (a.ex) { var da = exDef(a.x), db = exDef(b.x); if (Math.abs(da - db) > 1e-9) return db - da; if (la !== lb) return la - lb; if (Math.abs(a.r - b.r) >= 0.1) return a.r - b.r; }
+    else { if (Math.abs(a.r - b.r) >= 0.1) return a.r - b.r; if (la !== lb) return la - lb; }
+    if (!!a.v !== !!b.v) return a.v ? 1 : -1;
+    return (a.i + '' === a.i ? 0 : a.i) - (b.i + '' === b.i ? 0 : b.i);
+  }
   function plan() {
     var t = TODAY(), list = [];
     data.ex.forEach(function (x, i) {
@@ -118,11 +138,7 @@
       var r = revision(x);
       if (r < t + 1) list.push({ x: x, r: r, ex: modeExam(x), i: i });
     });
-    list.sort(function (a, b) {
-      var ka = (a.ex ? 0 : 1) * 1e11 + a.r * 1e5 + prio(a.x) * 1e4 + a.i;
-      var kb = (b.ex ? 0 : 1) * 1e11 + b.r * 1e5 + prio(b.x) * 1e4 + b.i;
-      return ka - kb;
-    });
+    list.sort(cmpPrio);
     var budget = budgetDuJour(), fait = dejaFait(), cum = 0, eff = budget, ef = fait; if (budget >= 1e9) { eff = minutesRestantes(); ef = 0; }
     list.forEach(function (o) {
       var m = mins(o.x);
@@ -130,6 +146,16 @@
       o.in = cum + m <= eff - ef || (cum === 0 && eff > ef);
       if (o.in) cum += m; /* un exo qui ne rentre pas est reporté ; un plus court peut prendre sa place */
     });
+    if (budget < 1e9) { /* budget de demain dépassé : on avance à aujourd'hui ce qui est prévu demain, s'il reste de la place */
+      var bT = data.reglages.planning[(new Date().getDay() + 1 + 6) % 7];
+      if (typeof bT === 'number' && !isNaN(bT) && bT > 0) {
+        var q = list.filter(function (o) { return !o.in && !o.rep; }), early = [];
+        data.ex.forEach(function (x, i) { if (!visible(x) || !x.evalue) return; var r = revision(x); if (r >= t + 1 && r < t + 2) { var o = { x: x, r: r, ex: modeExam(x), i: i }; q.push(o); early.push(o); } });
+        q.sort(cmpPrio);
+        var cT = 0, ovf = []; q.forEach(function (o) { var m = mins(o.x); if (cT + m <= bT || cT === 0) cT += m; else ovf.push(o); });
+        ovf.forEach(function (o) { var m = mins(o.x); if (early.indexOf(o) >= 0 && cum + m <= eff - ef) { o.in = true; o.early = true; cum += m; list.push(o); } });
+      }
+    }
     return { list: list, budget: budget, fait: fait };
   }
 
@@ -475,7 +501,7 @@
   function addQ(card, lg) { var qb = el('button', 'qbtn', '?'); qb.type = 'button'; qb.title = 'Afficher la légende'; qb.setAttribute('aria-label', 'Légende'); qb.addEventListener('click', function () { lg.hidden = !lg.hidden; qb.className = 'qbtn' + (lg.hidden ? '' : ' on'); }); card.querySelector('h2').appendChild(qb); }
   var dashEdit = false, ANIM = 1, animTok = 0, lastSig = null, semPrev = {};
   function renderDash() {
-    DEC = null;
+    DEC = null; DEFC = null;
     var box = $('v-dash'); box.textContent = ''; var cards = {}, draws = {};
     var t = TODAY(), L = data.ex.filter(function (x) { return visible(x) && x.evalue; });
     var late = 0, due = 0;
@@ -552,13 +578,11 @@
     {
       var cu = el('p', 'catchup'), r0 = drawCharge(null, L, t, null, 0, true);
       function dayTxt(n) { return fromNum(t + n).slice(0, 5); }
-      function catchTxt(r) { return r.lastLate < 0 ? null : r.lastLate >= r.N - 1 ? 'au-delà de 6 semaines' : 'le ' + dayTxt(r.lastLate + 1); }
+      function catchTxt(r) { if (r.lastLate < 0) return null; if (r.lastLate >= r.N - 1) return 'dans plus de 6 semaines'; var n = r.lastLate + 1; return n === 1 ? 'demain' : 'dans ' + n + ' jours'; }
       var c0t = catchTxt(r0);
       if (c0t === null) cu.textContent = 'Tu es à jour : aucun retard prévu.';
       else {
         cu.textContent = 'À ce rythme, tu es à jour ' + c0t + '.';
-        var r1 = drawCharge(null, L, t, null, 30, true), c1t = catchTxt(r1);
-        if (c1t !== null && c1t !== c0t) cu.textContent += ' Avec 30 min de plus par jour : ' + c1t + '.';
       }
       var sgE = c1.querySelector('.seg'), rowE = el('div', 'chrow'); c1.insertBefore(rowE, sgE); rowE.appendChild(sgE); rowE.appendChild(cu);
     }
@@ -610,7 +634,38 @@
     c5.insertBefore(fl5, cv5);
     lg5.hidden = true; c5.appendChild(lg5); addQ(c5, lg5); c5.classList.add('ctr'); cards.oubli = c5; draws.oubli = function () { drawOubli(cv5); }; c5.classList.add('wide');
     cards.charge.classList.add('wide'); cards.habit.classList.add('wide');
-    var R = data.reglages, keys = ['sem', 'mat', 'charge', 'habit', 'exam', 'donut', 'jring', 'oubli'];
+    /* prévision du niveau à la date de chaque examen à venir */
+    var cp = dcard('Prévision avant l’examen'), nP = 0;
+    fut.forEach(function (m) {
+      var es = L.filter(function (x) { return !x.ajoute && x.semestre === m.semestre && x.matiere === m.nom; }); if (!es.length) return;
+      var E = dnum(m.examen), now = 0, fin = 0;
+      es.forEach(function (x) { now += effLvl(x); var pr = occPred(x, E); fin += Math.min(5, pr.length ? pr[pr.length - 1].n : lvl(x)); });
+      now /= es.length; fin /= es.length; nP++;
+      var r = el('div', 'prow'), tp = el('div', 'ptop'); tp.appendChild(el('b', 'mn', m.nom)); tp.appendChild(el('span', 'pj', 'J-' + (E - t)));
+      tp.appendChild(nivBadge(Math.round(now * 10) / 10, 'sm')); tp.appendChild(el('span', 'parr', '→')); tp.appendChild(nivBadge(Math.round(fin * 10) / 10, 'sm')); r.appendChild(tp);
+      var trk = el('div', 'trk'), fl = el('i', 'fl'); fl.style.width = Math.min(100, fin / 5 * 100) + '%'; fl.style.background = scale(fin); trk.appendChild(fl); var me = el('u', 'me'); me.style.left = '90%'; me.title = 'Niveau visé : 4,5'; trk.appendChild(me); r.appendChild(trk);
+      cp.appendChild(r);
+    });
+    if (!nP) cp.appendChild(el('p', 'muted', 'Aucun examen à venir avec des exercices.'));
+    cards.prev = cp;
+    /* lien entre le niveau des exos juste avant l'examen et la note obtenue */
+    var cl = dcard('Exos et note à l’examen'), pts = [];
+    matsV.filter(function (m) { return m.examen && dnum(m.examen) < t && typeof m.note === 'number'; }).forEach(function (m) {
+      var E = dnum(m.examen), vals = [];
+      data.ex.filter(function (x) { return x.semestre === m.semestre && x.matiere === m.nom; }).forEach(function (x) { var last = null; (data.hist || []).forEach(function (h) { if (h.id === x.id && h.jour && dnum(h.jour) <= E && (!last || h.ts > last.ts)) last = h; }); if (last) vals.push(Math.min(5, last.niveau)); });
+      if (vals.length) pts.push({ nom: m.nom, sem: m.semestre, lv: mean(vals), note: m.note, n: vals.length });
+    });
+    if (!pts.length) cl.appendChild(el('p', 'muted', 'Pas encore de matière passée avec une note et des exercices révisés avant l’examen.'));
+    else {
+      pts.forEach(function (p) { var r = el('div', 'prow lrow'); r.appendChild(el('b', 'mn', p.nom + ' · ' + p.sem)); r.appendChild(nivBadge(Math.round(p.lv * 10) / 10, 'sm')); r.appendChild(el('span', 'ln', fmt1(p.note) + ' /20')); cl.appendChild(r); });
+      if (pts.length >= 3) {
+        var mx = mean(pts.map(function (p) { return p.lv; })), my = mean(pts.map(function (p) { return p.note; })), sxy = 0, sxx = 0, syy = 0;
+        pts.forEach(function (p) { sxy += (p.lv - mx) * (p.note - my); sxx += (p.lv - mx) * (p.lv - mx); syy += (p.note - my) * (p.note - my); });
+        if (sxx > 0 && syy > 0) cl.appendChild(el('p', 'muted oinfo', 'En moyenne, 1 niveau de plus en exos = ' + (sxy / sxx >= 0 ? '+' : '') + fmt1(Math.round(sxy / sxx * 10) / 10) + ' point sur 20 à l’examen (corrélation ' + fmt1(Math.round(sxy / Math.sqrt(sxx * syy) * 100) / 100) + ').'));
+      } else cl.appendChild(el('p', 'muted oinfo', 'Avec au moins 3 matières passées, j’afficherai le lien entre les deux.'));
+    }
+    cards.lien = cl;
+    var R = data.reglages, keys = ['sem', 'mat', 'charge', 'habit', 'exam', 'donut', 'jring', 'oubli', 'prev', 'lien'];
     var ord = (R.dashOrdre || []).filter(function (k) { return keys.indexOf(k) >= 0; }); keys.forEach(function (k) { if (ord.indexOf(k) < 0) { if (k === 'ue' && ord.indexOf('sem') >= 0) ord.splice(ord.indexOf('sem') + 1, 0, k); else ord.push(k); } });
     var hid = R.dashCache || [];
     R.dashLarge = R.dashLarge || {}; keys.forEach(function (k) { if (R.dashLarge[k] !== undefined) cards[k].classList.toggle('wide', !!R.dashLarge[k]); });
@@ -770,6 +825,7 @@
       if (g < 0 || g > 200) return;
       var I = interval(a), tol = Math.max(1, Math.round(I * 0.2)), rel = g - I;
       if (a <= 5 && g > 100) return;
+      if (a > 5 && g <= interval(5)) { a = 5; I = interval(5); tol = Math.max(1, Math.round(I * 0.2)); rel = g - I; }
       P.push({ g: g, n: Math.min(5, h.niveau), a: a, I: I, tol: tol, rel: rel, pink: Math.abs(rel) <= tol, late: rel > tol });
     }); return P;
   }
@@ -845,37 +901,51 @@
     }); g.setLineDash([]);
   }
   /* note attendue après `gap` jours pour un exo de niveau `pl` ; null si pas assez de données pour ce niveau */
-  function expectNote(pl, gap) { var D = decay(); if (pl > 5) { var m6 = D.lv[6]; return m6 ? decayAt(m6, gap - interval(pl)) : null; } var m = D.lv[pl]; return m ? decayAt(m, gap) : null; }
+  function expectNote(pl, gap) { var D = decay(); if (pl > 5) { var m6 = D.lv[6]; return m6 ? decayAt(m6, gap - interval(pl)) : null; } var m = D.lv[pl]; if (!m) return null; if (gap >= m.I - 0) return decayAt(m, gap);
+    var early = D.P.filter(function (p) { return p.a === pl && p.rel < -p.tol; });
+    if (early.length >= MINPTS) { var sw = 0, sv = 0, sg = Math.max(1.5, m.I * 0.2); early.forEach(function (p) { var z = (p.g - gap) / sg, w = Math.exp(-z * z / 2); sw += w; sv += w * p.n; }); if (sw >= 0.8) return Math.max(m.a0, sv / sw); }
+    return 5 - (5 - m.a0) * Math.sqrt(Math.max(0, gap) / Math.max(1, m.I)); }
   function drawCharge(cv, L, t, ax, extra, noDraw, opt) {
     opt = opt || {}; var N = opt.N || 42, LOG = [], late = [], lateEx = [], ex = [], nm = [], pv = [], pvL = [], pvE = [], pvLE = [], cnt = []; for (var i = 0; i < N; i++) { late.push(0); lateEx.push(0); ex.push(0); nm.push(0); pv.push(0); pvL.push(0); pvE.push(0); pvLE.push(0); cnt.push(0); }
     var RET = !data.reglages.prevOff || !!opt.all, vc = 0;
     var cand = [];
     data.ex.forEach(function (x, i) { if ((opt.all || visible(x)) && x.evalue) cand.push({ x: x, r: revision(x), ex: modeExam(x), i: i, m: mins(x) }); });
     function lvO(o) { return o.v ? o.L : prio(o.x); }
-    function srt() { cand.sort(function (a, b) { return ((a.ex ? 0 : 1) * 1e11 + a.r * 1e5 + lvO(a) * 1e4 + (a.v ? 5e3 : 0) + (a.i + '' === a.i ? 0 : a.i)) - ((b.ex ? 0 : 1) * 1e11 + b.r * 1e5 + lvO(b) * 1e4 + (b.v ? 5e3 : 0) + (b.i + '' === b.i ? 0 : b.i)); }); }
+    function srt() { cand.sort(cmpPrio); }
     srt();
     var done = {};
     for (var d = 0; d < N; d++) {
       var wd = new Date((t + d) * DAY).getUTCDay(), bud = data.reglages.planning[(wd + 6) % 7];
       bud = typeof bud === 'number' && !isNaN(bud) ? bud : 1e9; if (extra && bud < 1e9 && bud > 0) bud += extra;
       var cum = 0, fait = d === 0 ? dejaFait() : 0; if (RET && d > 0) srt();
+      var effB = bud, effF = fait; if (bud >= 1e9) { effB = d === 0 ? minutesRestantes() : 1440; effF = d === 0 ? 0 : fait; }
+      var take = function (o) {
+        cum += o.m;
+        done[o.i] = 1; if (!o.v) cnt[d]++;
+        if (RET) {
+          var ox = o.x, gp = t + d - (o.v ? o.ev : dnum(o.x.evalue));
+          if (gp >= 0) {
+            var pl = o.v ? o.L : lvl(o.x), nt = expectNote(pl, gp), nl = nt === null ? pl + 1 : Math.min(5, Math.round(nt)); if (nt !== null && nl >= 5 && pl >= 5) nl = pl + 1;
+            LOG.push({ id: ox.id, d: t + d, n: nl, m: o.m }); var r2 = Math.max(revisionAt(ox, t + d, interval(nl)), t + d + 1); if (r2 < t + N && !lastBeforeExam(ox, t + d)) cand.push({ v: true, x: ox, L: nl, ev: t + d, r: r2, ex: examAt(ox, t + d), i: 'v' + (vc++), m: o.m });
+          }
+        }
+        if (o.v) { if (o.r < t + d) { if (o.ex) pvLE[d] += o.m; else pvL[d] += o.m; } else if (o.ex) pvE[d] += o.m; else pv[d] += o.m; } else if (o.r < t + d) { if (o.ex) lateEx[d] += o.m; else late[d] += o.m; } else if (o.ex) ex[d] += o.m; else nm[d] += o.m;
+      };
       cand.forEach(function (o) {
         if (done[o.i] || o.r >= t + d + 1) return;
         if (d === 0 && o.x && o.x.reporte === todayISO()) return;
-        var effB = bud, effF = fait; if (bud >= 1e9) { effB = d === 0 ? minutesRestantes() : 1440; effF = d === 0 ? 0 : fait; }
-        if (effB >= 1e9 || cum + o.m <= effB - effF || (cum === 0 && effB > effF)) {
-          cum += o.m;
-          done[o.i] = 1; if (!o.v) cnt[d]++;
-          if (RET) {
-            var ox = o.x, gp = t + d - (o.v ? o.ev : dnum(o.x.evalue));
-            if (gp >= 0) {
-              var pl = o.v ? o.L : lvl(o.x), nt = expectNote(pl, gp), nl = nt === null ? pl + 1 : Math.min(5, Math.round(nt)); if (nt !== null && nl >= 5 && pl >= 5) nl = pl + 1;
-              LOG.push({ id: ox.id, d: t + d, n: nl, m: o.m }); var r2 = Math.max(revisionAt(ox, t + d, interval(nl)), t + d + 1); if (r2 < t + N) cand.push({ v: true, x: ox, L: nl, ev: t + d, r: r2, ex: examAt(ox, t + d), i: 'v' + (vc++), m: o.m });
-            }
-          }
-          if (o.v) { if (o.r < t + d) { if (o.ex) pvLE[d] += o.m; else pvL[d] += o.m; } else if (o.ex) pvE[d] += o.m; else pv[d] += o.m; } else if (o.r < t + d) { if (o.ex) lateEx[d] += o.m; else late[d] += o.m; } else if (o.ex) ex[d] += o.m; else nm[d] += o.m;
-        }
+        if (examNum(o.x.semestre, o.x.matiere) === t + d && o.ex) return;
+        if (effB >= 1e9 || cum + o.m <= effB - effF || (cum === 0 && effB > effF)) take(o);
       });
+      /* budget de demain dépassé : on avance d'abord à aujourd'hui (la veille) ce qui y est prévu, s'il reste de la place */
+      if (bud < 1e9 && d < N - 1) {
+        var bT = data.reglages.planning[(wd + 1 + 6) % 7];
+        if (typeof bT === 'number' && !isNaN(bT) && bT > 0) {
+          srt(); var qT = cand.filter(function (o) { return !done[o.i] && o.r < t + d + 2; }), cT = 0, ovf = [];
+          qT.forEach(function (o) { if (cT + o.m <= bT || (cT === 0)) cT += o.m; else ovf.push(o); });
+          ovf.forEach(function (o) { if (o.r >= t + d + 1 && cum + o.m <= effB - effF) take(o); });
+        }
+      }
     }
     var lastLate = -1; for (var q0 = 0; q0 < N; q0++) if (late[q0] + lateEx[q0] + pvL[q0] + pvLE[q0] > 0) lastLate = q0;
     var res = { lastLate: lastLate, N: N, log: LOG }; if (noDraw) return res;
@@ -1023,11 +1093,14 @@
   }
   /* ---------- flèche du temps : occurrences faites (roses) et prévues (grises) ---------- */
   function occDone(x) { return (data.hist || []).filter(function (h) { return h.id === x.id && h.jour && typeof h.niveau === 'number'; }).sort(function (a, b) { return a.ts - b.ts; }).map(function (h) { return { d: dnum(h.jour), n: h.niveau, m: h.m }; }); }
+  /* vrai si une révision faite à la date d est déjà la dernière avant l'examen (butoire atteinte) */
+  function lastBeforeExam(x, d) { var E = examNum(x.semestre, x.matiere), R = data.reglages; if (E === null || E < d || E - d > R.debutExam) return false; var X = Math.max(1, (E - d) > R.seuilButoire ? R.butoireSi : R.butoireSinon); return E - d <= X; }
   function occPred(x, end) {
-    var out = [], lv = lvl(x), ev = x.ajoute ? TODAY() : dnum(x.evalue), d = Math.max(revision(x), TODAY());
+    var out = [], lv = lvl(x), ev = x.ajoute ? TODAY() : dnum(x.evalue), d = Math.max(revision(x), TODAY()), E0 = examNum(x.semestre, x.matiere);
     while (d <= end && out.length < 60) {
+      if (E0 !== null && d === E0) { d = E0 + 1; continue; }
       var gp = d - ev, nt = expectNote(lv, gp), nl = nt === null ? lv + 1 : Math.min(5, Math.round(nt)); if (nt !== null && nl >= 5 && lv >= 5) nl = lv + 1;
-      out.push({ d: d, n: nl, m: mins(x) });
+      out.push({ d: d, n: nl, m: mins(x) }); if (lastBeforeExam(x, d)) { d = Math.max(d + 1, E0 + 1); lv = nl; ev = out[out.length - 1].d; continue; }
       var r2 = Math.max(revisionAt(x, d, interval(nl)), d + 1); lv = nl; ev = d; d = r2;
     }
     return out;
@@ -1074,7 +1147,7 @@
     var hd = el('div', 'exh'); hd.appendChild(el('span', 'chip', m.semestre)); hd.appendChild(el('b', '', 'Examen le ' + fromNum(E))); hd.appendChild(el('span', 'jbig', J > 0 ? 'J-' + J : J === 0 ? 'Aujourd’hui' : 'Passé')); b.appendChild(hd);
     var from = examFrom === 'all' ? -1e9 : E - R.debutExam, log = [];
     if (examRep && J >= 0) log = drawCharge(null, [], t, null, 0, true, { N: Math.max(42, Math.min(250, J + 2)), all: true }).log;
-    var rows = es.map(function (x, i) { return { name: x.intitule || 'Exo ' + (i + 1), x: x, done: occDone(x), pred: examRep ? log.filter(function (o) { return o.id === x.id && o.d <= E; }) : occPred(x, E) }; });
+    var rows = es.map(function (x, i) { return { name: x.intitule || 'Exo ' + (i + 1), x: x, done: occDone(x), pred: examRep ? log.filter(function (o) { return o.id === x.id && o.d < E; }) : occPred(x, E - 1) }; });
     var fait = 0, prevu = 0; rows.forEach(function (r) { r.done.forEach(function (o) { if (o.d >= from) fait += o.m || mins(r.x); }); r.pred.forEach(function () { prevu += mins(r.x); }); });
     var tot = fait + prevu, st = el('div', 'exst'), br = el('div', 'exbr'), lf = el('div');
     lf.appendChild(el('div', 'exsl', 'Temps fait : ' + dur(Math.round(fait)) + ' sur ' + dur(Math.round(tot)) + ' prévus'));
@@ -1407,7 +1480,7 @@
 
   /* ---------- affichage ---------- */
   function render() {
-    DEC = null;
+    DEC = null; DEFC = null;
     renderFilters(); document.body.classList.toggle('wide', view === 'dash' || view === 'set');
     ['today', 'exos', 'mats', 'dash', 'set'].forEach(function (v) { $('v-' + v).hidden = v !== view; });
     document.querySelectorAll('#tabs button').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.view === view ? 'true' : 'false'); });
@@ -1440,7 +1513,7 @@
   $('examBack').addEventListener('click', function () { $('examDlg').close(); });
   $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
   $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; data.reglages.matieres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 168'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 170'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
   $('syncUrlBtn').addEventListener('click', function () { $('menu').close(); syncNow(true); });
