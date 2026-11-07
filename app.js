@@ -42,6 +42,9 @@
     if (Array.isArray(d.ex)) d.ex.forEach(function (x) {
       if (x.succes > 5) { var r = runOf(x.id, d.hist); x.p5 = Math.max(0, x.succes - 4 - r.run); x.succes = 5; }
     });
+    var hasH = {}; (Array.isArray(d.hist) ? d.hist : []).forEach(function (h) { hasH[h.id] = 1; });
+    if (Array.isArray(d.ex)) { if (!Array.isArray(d.hist)) d.hist = []; /* révisions importées : on fige leur durée dans l'historique */
+      d.ex.forEach(function (x) { if (x.evalue && !x.ajoute && !hasH[x.id]) { d.hist.push({ id: x.id, ts: dnum(x.evalue) * DAY, jour: x.evalue, avant: { succes: x.succes || 0, evalue: '' }, niveau: x.succes || 0, m: x.minutes > 0 ? +x.minutes : r.minutesDefaut, fige: 1 }); hasH[x.id] = 1; } }); }
     return { ex: Array.isArray(d.ex) ? d.ex : [], mats: Array.isArray(d.mats) ? d.mats : [], hist: Array.isArray(d.hist) ? d.hist : [], jours: d.jours && typeof d.jours === 'object' ? d.jours : {}, ues: Array.isArray(d.ues) ? d.ues : [], corbeille: Array.isArray(d.corbeille) ? d.corbeille : [], chronos: d.chronos && typeof d.chronos === 'object' ? d.chronos : {}, reglages: r };
   }
   function load() { try { var raw = localStorage.getItem(KEY); if (raw) data = fix(JSON.parse(raw)); } catch (e) { /* départ à vide */ } }
@@ -85,14 +88,16 @@
     }
     return I + iv;
   }
-  function revision(x) { return revisionAt(x, dnum(x.evalue), interval(lvl(x))); }
+  function revision(x) { if (x.ajoute) return TODAY(); return revisionAt(x, dnum(x.evalue), interval(lvl(x))); }
+  function prio(x) { return x.ajoute ? 3 : lvl(x); }
   function examAt(x, D) { var E = examNum(x.semestre, x.matiere); if (E === null) return false; var d = E - D; return d >= 0 && d <= data.reglages.debutExam; }
   function modeExam(x) {
     var E = examNum(x.semestre, x.matiere); if (E === null) return false;
     var d = E - TODAY(); return d >= 0 && d <= data.reglages.debutExam;
   }
   function mins(x) { return x.minutes > 0 ? +x.minutes : data.reglages.minutesDefaut; }
-  function visible(x) { var s = data.reglages.semestres; return !s.length || s.indexOf(x.semestre) >= 0; }
+  function matOk(nom) { var m = data.reglages.matieres; return !m || !m.length || m.indexOf(norm(nom).trim()) >= 0; }
+  function visible(x) { var s = data.reglages.semestres; return (!s.length || s.indexOf(x.semestre) >= 0) && matOk(x.matiere); }
   function budgetDuJour() {
     var d = new Date(), v = data.reglages.planning[(d.getDay() + 6) % 7];
     return typeof v === 'number' && !isNaN(v) ? v : 1e9;
@@ -101,7 +106,7 @@
   function minutesRestantes() { var n = new Date(), m = (24 * 60) - (n.getHours() * 60 + n.getMinutes()); return Math.max(60, Math.ceil(m / 60) * 60); }
   function dejaFait() {
     var t = todayISO(), s = 0;
-    data.ex.forEach(function (x) { if (x.evalue === t && visible(x)) s += mins(x); });
+    data.ex.forEach(function (x) { if (x.evalue === t && visible(x) && !x.ajoute) s += mins(x); });
     return s;
   }
   function plan() {
@@ -112,8 +117,8 @@
       if (r < t + 1) list.push({ x: x, r: r, ex: modeExam(x), i: i });
     });
     list.sort(function (a, b) {
-      var ka = (a.ex ? 0 : 1) * 1e11 + a.r * 1e5 + lvl(a.x) * 1e4 + a.i;
-      var kb = (b.ex ? 0 : 1) * 1e11 + b.r * 1e5 + lvl(b.x) * 1e4 + b.i;
+      var ka = (a.ex ? 0 : 1) * 1e11 + a.r * 1e5 + prio(a.x) * 1e4 + a.i;
+      var kb = (b.ex ? 0 : 1) * 1e11 + b.r * 1e5 + prio(b.x) * 1e4 + b.i;
       return ka - kb;
     });
     var budget = budgetDuJour(), fait = dejaFait(), cum = 0, eff = budget, ef = fait; if (budget >= 1e9) { eff = minutesRestantes(); ef = 0; }
@@ -138,18 +143,32 @@
     var l = semestres(), i = l.indexOf(s), j = i + dir; if (j < 0 || j >= l.length) return;
     var t = l[i]; l[i] = l[j]; l[j] = t; data.reglages.semOrdre = l; data.reglages.ordreSem = 'manuel'; save(); render();
   }
+  /* matières proposées : celles des semestres cochés (ou de tous), fusionnées par nom */
+  function matChoices() {
+    var ss = data.reglages.semestres, seen = {}, out = [];
+    data.mats.forEach(function (m) { if (ss.length && ss.indexOf(m.semestre) < 0) return; var k = norm(m.nom).trim(); if (!seen[k]) { seen[k] = 1; out.push({ k: k, nom: m.nom }); } });
+    return out.sort(function (a, b) { return a.nom.localeCompare(b.nom, 'fr', { sensitivity: 'base' }); });
+  }
+  function matClean() { var ok = matChoices().map(function (m) { return m.k; }); data.reglages.matieres = (data.reglages.matieres || []).filter(function (k) { return ok.indexOf(k) >= 0; }); }
   function renderFilters() {
+    matClean();
     if (view !== 'dash') Array.prototype.slice.call(document.querySelectorAll('.hbtns .editbtn, header .hh')).forEach(function (n) { n.remove(); });
     var box = $('filtBox'); box.textContent = ''; var fb = $('filtBtn'), all = semestres();
-    fb.hidden = (view === 'set' || all.length < 2); fb.querySelector('.fdot').hidden = !data.reglages.semestres.length;
-    if (view === 'set' || all.length < 2) return;
+    if (view === 'set') { fb.hidden = true; return; }
+    var hasMat = matChoices().length > 1; fb.hidden = (view === 'set' || (all.length < 2 && !hasMat)); fb.querySelector('.fdot').hidden = !(data.reglages.semestres.length || (data.reglages.matieres || []).length);
+    var mbox = $('filtMat'); mbox.textContent = ''; $('filtMatT').hidden = !hasMat;
+    if (hasMat) matChoices().forEach(function (m) {
+      var b = el('button', 'chip', m.nom); b.type = 'button'; b.setAttribute('aria-pressed', (data.reglages.matieres || []).indexOf(m.k) >= 0 ? 'true' : 'false');
+      b.addEventListener('click', function () { var a = data.reglages.matieres = data.reglages.matieres || [], k = a.indexOf(m.k); if (k >= 0) a.splice(k, 1); else a.push(m.k); save(); render(); });
+      mbox.appendChild(b);
+    });
     all.forEach(function (s) {
       var b = el('button', 'chip', s); b.type = 'button';
       b.setAttribute('aria-pressed', data.reglages.semestres.indexOf(s) >= 0 ? 'true' : 'false');
       b.addEventListener('click', function () {
         var a = data.reglages.semestres, k = a.indexOf(s);
         if (k >= 0) a.splice(k, 1); else a.push(s);
-        save(); render();
+        matClean(); save(); render();
       });
       box.appendChild(b);
     });
@@ -171,23 +190,24 @@
   function chFmt(ms) { var t = Math.floor(ms / 1000), h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), sec = t % 60; return (h ? h + ':' + ('0' + m).slice(-2) : ('0' + m).slice(-2)) + ':' + ('0' + sec).slice(-2); }
   var CHI = { watch: '<circle cx="12" cy="13.5" r="7.5"/><path d="M12 9.5v4l2.5 1.5M9.5 3h5M12 3v3M18.2 6.8l1.2-1.2"/>', pause: '<path d="M9 6v12M15 6v12"/>', play: '<path d="M8 5.5v13l10-6.5Z"/>', x: '<path d="M7 7l10 10M17 7L7 17"/>', check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>', skip: '<path d="M5 12h12M13 7l5 5-5 5"/>', back: '<path d="M19 12H7M11 7l-5 5 5 5"/>' };
   function chSvg(n, sz) { var i = document.createElement('i'); i.className = 'chi'; i.innerHTML = '<svg viewBox="0 0 24 24" width="' + sz + '" height="' + sz + '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + CHI[n] + '</svg>'; return i; }
+  function chShow(id, ms) { var x = data.ex.filter(function (e) { return e.id === id; })[0], left = (x ? mins(x) : 0) * 60000 - ms; return left >= 0 ? { t: chFmt(left), over: false } : { t: '+' + chFmt(-left), over: true }; }
   function chronoEl(id) {
     var box = el('div', 'chrono'), all = chGetAll(), c = all[id];
     function redo() { var n = chronoEl(id); box.replaceWith(n); }
     if (!c) {
-      var b = el('button', 'chgo'); b.type = 'button'; b.appendChild(chSvg('watch', 14)); b.appendChild(document.createTextNode('Chrono'));
+      var b = el('button', 'chgo'); b.type = 'button'; b.appendChild(chSvg('watch', 14)); b.appendChild(document.createTextNode('Minuteur'));
       b.addEventListener('click', function (e) { e.stopPropagation(); var a = chGetAll(); a[id] = { acc: 0, start: Date.now() }; chSetAll(a); redo(); });
       box.appendChild(b); return box;
     }
-    box.className = 'chrono on' + (c.start ? ' run' : '');
-    var t = el('span', 'chtime', chFmt(chMs(c))); t.dataset.chid = id; box.appendChild(chSvg('watch', 14)); box.appendChild(t);
+    var sh = chShow(id, chMs(c)); box.className = 'chrono on' + (c.start ? ' run' : '') + (sh.over ? ' over' : '');
+    var t = el('span', 'chtime', sh.t); t.dataset.chid = id; box.appendChild(chSvg('watch', 14)); box.appendChild(t);
     var pb = el('button', 'chpp'); pb.type = 'button'; pb.title = c.start ? 'Pause' : 'Reprendre'; pb.appendChild(chSvg(c.start ? 'pause' : 'play', 12));
     pb.addEventListener('click', function (e) { e.stopPropagation(); var a = chGetAll(), k = a[id]; if (!k) return; if (k.start) { k.acc = chMs(k); k.start = null; } else k.start = Date.now(); chSetAll(a); redo(); });
     var xb = el('button', 'chx'); xb.type = 'button'; xb.title = 'Remettre à zéro'; xb.appendChild(chSvg('x', 10));
     xb.addEventListener('click', function (e) { e.stopPropagation(); var a = chGetAll(); delete a[id]; chSetAll(a); redo(); });
     box.appendChild(pb); box.appendChild(xb); return box;
   }
-  setInterval(function () { var all = chGetAll(); document.querySelectorAll('.chtime').forEach(function (n) { var c = all[n.dataset.chid]; if (c && c.start) n.textContent = chFmt(chMs(c)); }); }, 1000);
+  setInterval(function () { var all = chGetAll(); document.querySelectorAll('.chtime').forEach(function (n) { var c = all[n.dataset.chid]; if (c && c.start) { var sh = chShow(n.dataset.chid, chMs(c)); n.textContent = sh.t; if (n.parentNode) n.parentNode.classList.toggle('over', sh.over); } }); }, 1000);
 
   function exoCard(o, withBtn) {
     var x = o.x, c = el('div', 'card' + (o.ex ? ' exam' : ''));
@@ -195,7 +215,11 @@
     var lx = lvl(x), nb = el('div', 'niv', String(lx)); nb.style.background = scale(lx); nb.style.color = lx < 3.2 ? '#fff' : '#5c1530'; nb.title = nivName(lx);
     var l = el('div'); l.style.flex = '1'; l.appendChild(el('b', '', x.matiere + (x.intitule ? ' · ' + x.intitule : '')));
     l.appendChild(el('div', 'muted', x.semestre + ' · fait le ' + fromNum(dnum(x.evalue))));
-    top.appendChild(nb); top.appendChild(l);
+    if (x.ajoute) { nb.textContent = 'A'; nb.style.background = '#cfcfd6'; nb.style.color = '#4a3a42'; nb.title = 'Ajouté : pas encore de note'; }
+    top.appendChild(nb);
+    var ef = x.ajoute ? lx : effLvl(x);
+    if (ef !== lx) { var eb = el('div', 'niv eff', fmt1(ef)); eb.style.background = scale(ef); eb.style.color = ef < 3.2 ? '#fff' : '#5c1530'; eb.title = 'Note effective (avec le retard)'; top.appendChild(eb); }
+    top.appendChild(l);
     c.appendChild(top);
     var p = el('div'); p.style.marginTop = '6px';
     var late = Math.floor(TODAY() - o.r);
@@ -206,7 +230,7 @@
     c.appendChild(p);
     if (withBtn) {
       var acts = el('div', 'acts');
-      var rb = el('button', 'abtn soft'); rb.type = 'button'; rb.appendChild(chSvg(o.rep ? 'back' : 'skip', 14)); rb.appendChild(document.createTextNode(o.rep ? 'Remettre' : 'Reporter'));
+      var rb = el('button', 'abtn soft'); rb.type = 'button'; rb.className = 'abtn soft ico'; rb.title = o.rep ? 'Remettre' : 'Reporter'; rb.setAttribute('aria-label', rb.title); rb.appendChild(chSvg(o.rep ? 'back' : 'skip', 17));
       rb.addEventListener('click', function () { if (o.rep) { delete x.reporte; toast('Remis dans ta liste.'); } else { x.reporte = todayISO(); toast('Reporté : ton temps va aux autres exos.'); } save(); render(); });
       var b = el('button', 'abtn main'); b.type = 'button'; b.appendChild(chSvg('check', 18)); b.title = 'Refait'; b.setAttribute('aria-label', 'Refait'); b.addEventListener('click', function () { openDone(x.id); });
       if (withBtn !== 'lite') acts.appendChild(rb); acts.appendChild(b); acts.appendChild(chronoEl(x.id)); c.appendChild(acts);
@@ -246,7 +270,7 @@
   function addHist(x, niv) {
     data.hist = data.hist || [];
     var mi = $('doneMin') && parseFloat($('doneMin').value); if (mi > 0 && mi < 1000) x.minutes = Math.round(mi);
-    data.hist.push({ id: x.id, ts: Date.now(), jour: todayISO(), avant: { succes: x.succes, evalue: x.evalue || '' }, niveau: niv, m: mins(x) });
+    data.hist.push({ id: x.id, ts: Date.now(), jour: todayISO(), avant: { succes: x.ajoute ? 0 : x.succes, evalue: x.ajoute ? '' : (x.evalue || '') }, niveau: niv, m: mins(x) }); delete x.ajoute;
   }
   function histBlock() {
     var lim = Date.now() - 7 * DAY; data.corbeille = (data.corbeille || []).filter(function (c) { return c && c.ex && c.ts > lim; });
@@ -447,14 +471,16 @@
     var c = cv === undefined ? v : cv, b = el('div', 'niv' + (sz ? ' ' + sz : ''), fmt1(Math.round(v * 10) / 10)); b.style.background = scale(c); b.style.color = c < 3.2 ? '#fff' : '#5c1530'; return b;
   }
   function fmt1(v) { return (Math.round(v * 100) / 100).toString().replace('.', ','); }
+  function addQ(card, lg) { var qb = el('button', 'qbtn', '?'); qb.type = 'button'; qb.title = 'Afficher la légende'; qb.setAttribute('aria-label', 'Légende'); qb.addEventListener('click', function () { lg.hidden = !lg.hidden; qb.className = 'qbtn' + (lg.hidden ? '' : ' on'); }); card.querySelector('h2').appendChild(qb); }
   var dashEdit = false, ANIM = 1, animTok = 0, lastSig = null, semPrev = {};
   function renderDash() {
+    DEC = null;
     var box = $('v-dash'); box.textContent = ''; var cards = {}, draws = {};
     var t = TODAY(), L = data.ex.filter(function (x) { return visible(x) && x.evalue; });
     var late = 0, due = 0;
     L.forEach(function (x) { var r = revision(x); if (r < t) late++; else if (r < t + 1) due++; });
     var todo = late + due;
-    var matsV = data.mats.filter(function (m) { return !data.reglages.semestres.length || data.reglages.semestres.indexOf(m.semestre) >= 0; });
+    var matsV = data.mats.filter(function (m) { return (!data.reglages.semestres.length || data.reglages.semestres.indexOf(m.semestre) >= 0) && matOk(m.nom); });
     var fut = matsV.filter(function (m) { return m.examen && dnum(m.examen) >= t; }).sort(function (a, b) { return dnum(a.examen) - dnum(b.examen); });
     var dh = el('div', 'dhead'), hh = el('span', 'hh'); hh.innerHTML = '<svg viewBox="0 0 24 22" width="34" height="31" style="position:absolute;left:0;top:0"><path fill="#f08ab0" d="M12 21.5C5 15.8 1 12.2 1 7.6 1 4.4 3.5 2 6.6 2c2 0 3.9 1 5.4 3C13.5 3 15.4 2 17.4 2 20.5 2 23 4.4 23 7.6c0 4.6-4 8.2-11 13.9z"/></svg><svg viewBox="0 0 24 22" width="22" height="20" style="position:absolute;left:18px;top:16px"><path fill="#ad1457" d="M12 21.5C5 15.8 1 12.2 1 7.6 1 4.4 3.5 2 6.6 2c2 0 3.9 1 5.4 3C13.5 3 15.4 2 17.4 2 20.5 2 23 4.4 23 7.6c0 4.6-4 8.2-11 13.9z"/></svg>';
     var tt = el('div', 'dht'); tt.appendChild(el('b', '', 'Mes révisions')); tt.appendChild(el('small', '', 'Méthode des J · suivi de mes exercices'));
@@ -476,19 +502,21 @@
     box.appendChild(k);
 
     /* moyenne par semestre */
-    var c0 = dcard('Moyenne par semestre'), sems = semestres(); /* toujours tous les semestres, sans filtre */
+    var selM = data.reglages.matieres || [], selNames = matChoices().filter(function (m) { return selM.indexOf(m.k) >= 0; }).map(function (m) { return m.nom; });
+    var c0 = dcard(selNames.length ? 'Moyenne de ' + selNames.join(', ') + ' par semestre' : 'Moyenne par semestre'), sems = semestres();
+    function semV(sm) { if (!selNames.length) return semAvg(sm); var ns = data.mats.filter(function (m) { return m.semestre === sm && matOk(m.nom) && typeof m.note === 'number'; }).map(function (m) { return m.note; }); return mean(ns); } /* toujours tous les semestres, sans filtre */
     var cols = el('div', 'cols');
     [0, 5, 10, 15, 20].forEach(function (g) { var gl = el('div', 'gl'); gl.style.bottom = (26 + g * 6) + 'px'; gl.appendChild(el('span', '', String(g))); cols.appendChild(gl); });
     sems.forEach(function (sm) {
-      var v = semAvg(sm) || 0;
+      var v = semV(sm) || 0;
       var col = el('div', 'col'); col.appendChild(el('span', 'v', v ? fmt1(v) : '–'));
       var bar = el('i'); var hNew = Math.round(v * 6), hOld = semPrev[sm] === undefined ? hNew : semPrev[sm]; bar.style.height = hOld + 'px'; if (hOld !== hNew) { bar.style.transition = 'height 1s ease'; (function (b, h) { setTimeout(function () { b.style.height = h + 'px'; }, 30); })(bar, hNew); } semPrev[sm] = hNew; col.appendChild(bar); col.appendChild(el('span', 'l', sm)); cols.appendChild(col);
     });
     c0.appendChild(cols); cards.sem = c0;
 
     /* moyenne par matière : même nom fusionné, semestres cochés */
-    var cm = dcard('Moyenne par matière · semestres cochés'), gm = {};
-    L.forEach(function (x) { var k = x.matiere.trim().toLowerCase(); var g = gm[k] = gm[k] || { nom: x.matiere, s: 0, n: 0, sem: {}, nt: [] }; g.s += lvl(x); g.n++; g.sem[x.semestre] = 1; });
+    var cm = dcard('Moyenne par matière · semestres cochés'), gm = {}; if (!data.reglages.baisseOff) cm.appendChild(el('p', 'muted oinfo', 'Tient compte du retard (niveau effectif).'));
+    L.filter(function (x) { return !x.ajoute; }).forEach(function (x) { var k = x.matiere.trim().toLowerCase(); var g = gm[k] = gm[k] || { nom: x.matiere, s: 0, n: 0, sem: {}, nt: [] }; g.s += effLvl(x); g.n++; g.sem[x.semestre] = 1; });
     matsV.forEach(function (m) { var g = gm[m.nom.trim().toLowerCase()]; if (g && typeof m.note === 'number') g.nt.push(m.note); });
     var lm = Object.keys(gm).map(function (k) { var g = gm[k]; g.a = g.s / g.n; g.ns = Object.keys(g.sem).length; return g; }).sort(function (a, b) { return b.a - a.a; });
     if (!lm.length) cm.appendChild(el('p', 'muted', 'Aucun exercice dans les semestres cochés.'));
@@ -520,6 +548,19 @@
       c1.querySelector('h2').appendChild(qb);
     }
     var cv = document.createElement('canvas'), cax = document.createElement('canvas'), sc = el('div', 'scrollx'), wr = el('div', 'chw'); sc.appendChild(cv); wr.appendChild(cax); wr.appendChild(sc); c1.appendChild(wr);
+    {
+      var cu = el('p', 'catchup'), r0 = drawCharge(null, L, t, null, 0, true);
+      function dayTxt(n) { return fromNum(t + n).slice(0, 5); }
+      function catchTxt(r) { return r.lastLate < 0 ? null : r.lastLate >= r.N - 1 ? 'au-delà de 6 semaines' : 'le ' + dayTxt(r.lastLate + 1); }
+      var c0t = catchTxt(r0);
+      if (c0t === null) cu.textContent = 'Tu es à jour : aucun retard prévu.';
+      else {
+        cu.textContent = 'À ce rythme, tu es à jour ' + c0t + '.';
+        var r1 = drawCharge(null, L, t, null, 30, true), c1t = catchTxt(r1);
+        if (c1t !== null && c1t !== c0t) cu.textContent += ' Avec 30 min de plus par jour : ' + c1t + '.';
+      }
+      c1.insertBefore(cu, c1.querySelector('.seg').nextSibling);
+    }
     cards.charge = c1; draws.charge = function () { drawCharge(cv, L, t, cax); };
 
     cards.habit = habitCard();
@@ -532,8 +573,8 @@
       fut.forEach(function (m) {
         var dn = dnum(m.examen), J = dn - t, Rg = data.reglages, X = Math.max(1, J > Rg.seuilButoire ? Rg.butoireSi : Rg.butoireSinon);
         var need = Math.round(Math.max(0, Math.min(5, 5 * (1 - Math.max(0, J - X) / Math.max(1, Rg.debutExam)))) * 10) / 10;
-        var es = L.filter(function (x) { return x.semestre === m.semestre && x.matiere === m.nom; }), av = es.length ? es.reduce(function (a, x) { return a + lvl(x); }, 0) / es.length : null;
-        var row = el('div', 'exr'), mid = el('div', 'exm');
+        var es = L.filter(function (x) { return !x.ajoute && x.semestre === m.semestre && x.matiere === m.nom; }), av = es.length ? es.reduce(function (a, x) { return a + effLvl(x); }, 0) / es.length : null;
+        var row = el('div', 'exr'), mid = el('div', 'exm'); row.style.cursor = 'pointer'; row.addEventListener('click', function () { openExam(m); });
         var top = el('div', 'ext'); top.appendChild(el('span', 'chip', m.semestre)); top.appendChild(el('b', 'mn', m.nom)); mid.appendChild(top);
         var trk = el('div', 'trk'), fl = el('i', 'fl'); fl.style.width = Math.min(100, (av || 0) / 5 * 100) + '%'; if (av !== null) fl.style.background = scale(av); trk.appendChild(fl);
         for (var q = 1; q < 5; q++) { var tk = el('b', 'tk'); tk.style.left = (q * 20) + '%'; trk.appendChild(tk); }
@@ -550,21 +591,28 @@
     /* anneau succès */
     var c2 = dcard('Succès : exos / examens');
     var cv2 = document.createElement('canvas'); c2.appendChild(cv2);
-    var lg2 = el('div', 'legend'); [0, 1, 2, 3, 4, 5].forEach(function (i) { var sp = el('span'); var ic = el('i'); ic.style.background = C_NIV[i]; sp.appendChild(ic); sp.appendChild(document.createTextNode(i === 5 ? '5+' : String(i))); lg2.appendChild(sp); });
-    c2.appendChild(lg2); cards.donut = c2; draws.donut = function () { drawDonut(cv2, L); };
+    var lg2 = el('div', 'legend'); [0, 1, 2, 3, 4, 5].forEach(function (i) { var sp = el('span'); var ic = el('i'); ic.style.background = C_NIV[i]; sp.appendChild(ic); sp.appendChild(document.createTextNode(i === 5 ? '5+' : String(i))); lg2.appendChild(sp); }); (function () { var sp = el('span'), ic = el('i'); ic.style.background = '#cfcfd6'; sp.appendChild(ic); sp.appendChild(document.createTextNode('Ajouté')); lg2.appendChild(sp); })();
+    lg2.hidden = true; c2.appendChild(lg2); addQ(c2, lg2); cards.donut = c2; draws.donut = function () { drawDonut(cv2, L); };
 
     var c4 = dcard('Temps de révision par tranche de J');
     var cv4 = document.createElement('canvas'); c4.appendChild(cv4);
-    var lg4 = el('div', 'legend'); J_LAB.forEach(function (n, i) { var sp = el('span'); var ic = el('i'); ic.style.background = C_J[i]; sp.appendChild(ic); sp.appendChild(document.createTextNode(n)); lg4.appendChild(sp); });
-    c4.appendChild(lg4); cards.jring = c4; draws.jring = function () { drawDonut(cv4, L, true); };
+    var lg4 = el('div', 'legend'); J_LAB.forEach(function (n, i) { var sp = el('span'); var ic = el('i'); ic.style.background = C_J[i]; sp.appendChild(ic); sp.appendChild(document.createTextNode(n)); lg4.appendChild(sp); }); (function () { var sp = el('span'), ic = el('i'); ic.style.background = '#cfcfd6'; sp.appendChild(ic); sp.appendChild(document.createTextNode('Ajouté')); lg4.appendChild(sp); })();
+    lg4.hidden = true; c4.appendChild(lg4); addQ(c4, lg4); cards.jring = c4; draws.jring = function () { drawDonut(cv4, L, true); };
 
     var c5 = dcard('Courbe de l’oubli');
     var cv5 = document.createElement('canvas'); c5.appendChild(cv5);
-    var lg5 = el('div', 'legend'); [['#f8538b55', 'Chaque révision'], ['#ad1457', 'Moyenne lissée (100 derniers jours)'], ['#f9d3e0', 'Objectif (4,5 à 5)']].forEach(function (a) { var sp = el('span'); var ic = el('i'); ic.style.background = a[0]; sp.appendChild(ic); sp.appendChild(document.createTextNode(a[1])); lg5.appendChild(sp); });
-    var fl5 = el('div', 'seg'); [[0, 'Toutes les révisions'], [3, 'Exos bien connus (note préc. ≥ 3)']].forEach(function (o) {
-      var b = el('button', (data.reglages.oubliMin === 0 ? 0 : 3) === o[0] ? 'on' : '', o[1]); b.type = 'button';
-      b.addEventListener('click', function () { data.reglages.oubliMin = o[0]; save(); renderDash(); }); fl5.appendChild(b); });
+    var lg5 = el('div', 'legend'); [['#e0527f', 'Rose : révision à ±20 % du J prévu (compte dans la courbe)'], ['#9a9a9f', 'Gris : en retard ou trop en avance (ne compte pas)'], ['#ad1457', 'Moyenne lissée des roses'], ['#f9d3e0', 'Objectif (4,5 à 5)']].forEach(function (a) { var sp = el('span'); var ic = el('i'); ic.style.background = a[0]; sp.appendChild(ic); sp.appendChild(document.createTextNode(a[1])); lg5.appendChild(sp); });
+    var fl5 = el('div', 'seg'); [[-1, 'Tous'], [0, '0'], [1, '1'], [2, '2'], [3, '3'], [4, '4'], [5, '5']].forEach(function (o) {
+      var cur = typeof data.reglages.oubliNiv === 'number' ? data.reglages.oubliNiv : -1;
+      var b = el('button', cur === o[0] ? 'on' : '', o[1]); b.type = 'button'; if (o[0] >= 0) b.title = 'Niveau d’avant la révision : ' + o[0];
+      b.addEventListener('click', function () { data.reglages.oubliNiv = o[0]; save(); renderDash(); }); fl5.appendChild(b); });
     c5.insertBefore(fl5, cv5);
+    {
+      var DD = decay(), selN = typeof data.reglages.oubliNiv === 'number' ? data.reglages.oubliNiv : -1, PP = selN >= 0 ? DD.P.filter(function (p) { return p.a === selN; }) : DD.P, np = PP.filter(function (p) { return p.pink; }).length;
+      var inf = el('p', 'muted oinfo', (selN >= 0 ? 'Niveau ' + selN + ' avant révision : ' : '') + PP.length + ' point' + (PP.length > 1 ? 's' : '') + ' · ' + np + ' rose' + (np > 1 ? 's' : '') + ' · ' + (PP.length - np) + ' gris');
+      if (selN >= 0) { var mm = DD.lv[selN]; inf.textContent += mm ? (isFinite(mm.tau) ? ' · la note perd environ ' + Math.round((1 - Math.exp(-7 / mm.tau)) * 100) + ' % par semaine de retard' : ' · pas assez de retards pour mesurer une baisse') : ' · pas assez de données (moins de ' + MINPTS + ') : pas de baisse appliquée'; }
+      c5.insertBefore(inf, cv5);
+    }
     c5.appendChild(lg5); cards.oubli = c5; draws.oubli = function () { drawOubli(cv5); }; c5.classList.add('wide');
     cards.charge.classList.add('wide'); cards.habit.classList.add('wide');
     var R = data.reglages, keys = ['sem', 'mat', 'charge', 'habit', 'exam', 'donut', 'jring', 'oubli'];
@@ -611,7 +659,7 @@
       var x = data.ex.filter(function (e) { return e.id === h.id; })[0]; vu[h.id] = 1;
       map[h.jour] = (map[h.jour] || 0) + (h.m || (x ? mins(x) : data.reglages.minutesDefaut));
     });
-    data.ex.forEach(function (x) { if (!vu[x.id] && x.evalue) map[x.evalue] = (map[x.evalue] || 0) + mins(x); });
+    data.ex.forEach(function (x) { if (!vu[x.id] && x.evalue && !x.ajoute) map[x.evalue] = (map[x.evalue] || 0) + mins(x); });
     /* la date de la révision précédente (avant de refaire l'exo) compte aussi, si elle n'est pas déjà enregistrée */
     var seen = {}; (data.hist || []).forEach(function (h) { seen[h.id + '|' + h.jour] = 1; }); data.ex.forEach(function (x) { if (x.evalue) seen[x.id + '|' + x.evalue] = 1; });
     (data.hist || []).forEach(function (h) {
@@ -653,7 +701,7 @@
     var mois = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
     var nav = el('div', 'row2'); nav.style.marginBottom = '8px';
     var cur = el('b', 'hcur', ''), bt = el('button', 'plain', 'Aujourd’hui'); bt.type = 'button';
-    nav.appendChild(cur); nav.appendChild(bt); c.appendChild(nav);
+    var stk = streak(FM); nav.appendChild(cur); if (stk > 0) { var fl = el('span', 'flame', '🔥 ' + stk); fl.title = stk + ' jour' + (stk > 1 ? 's' : '') + ' de suite avec au moins une révision'; nav.appendChild(fl); } nav.appendChild(bt); c.appendChild(nav);
     var cols = ['#f6e9ee', '#f9d3e0', '#f0a9c0', '#f8538b', '#a33c5e', '#ad1457'];
     var ST = [[249, 211, 224], [248, 83, 139], [173, 20, 87], [0, 0, 0]], SV = [0, 120, 300, 1440];
     function colFor(v) {
@@ -691,8 +739,8 @@
   var J_LAB = ['En retard', 'J0', 'J1-3', 'J4-10', 'J11-25', 'J26-50', 'J50+'], C_J = [0, 1, 2, 3, 4, 5, 6].map(function (i) { return scale(i * 5 / 6); });
   function jIdx(x) { var d = revision(x) - TODAY(); return d < 0 ? 0 : d === 0 ? 1 : d <= 3 ? 2 : d <= 10 ? 3 : d <= 25 ? 4 : d <= 50 ? 5 : 6; }
   function drawDonut(cv, L, J) {
-    var NB = J ? 7 : 6, COL = J ? C_J : C_NIV, all = [], inn = [], sum = 0; for (var zz = 0; zz < NB; zz++) { all.push(0); inn.push(0); }
-    L.forEach(function (x) { var n = J ? jIdx(x) : Math.min(5, x.succes || 0), wt = J ? mins(x) : 1; all[n] += wt; if (modeExam(x)) inn[n] += wt; sum += J ? wt : n; });
+    var NB = J ? 8 : 7, COL = (J ? C_J : C_NIV).concat(['#cfcfd6']), all = [], inn = [], sum = 0; for (var zz = 0; zz < NB; zz++) { all.push(0); inn.push(0); }
+    L.forEach(function (x) { var n = x.ajoute ? NB - 1 : J ? jIdx(x) : Math.min(5, x.succes || 0), wt = J ? mins(x) : 1; all[n] += wt; if (modeExam(x)) inn[n] += wt; sum += J ? wt : (x.ajoute ? 0 : n); });
     var w = cv.clientWidth || 320, h = Math.round(Math.min(Math.max(230, w * 0.8), 480)), dpr = window.devicePixelRatio || 1;
     cv.width = w * dpr; cv.height = h * dpr; cv.style.height = h + 'px';
     var g = cv.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, w, h);
@@ -711,19 +759,56 @@
       });
     }
     ring(all, R1, R0, false); ring(inn, R2, R3, true);
-    g.fillStyle = '#ad1457'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = 'bold ' + Math.round(22 * K) + 'px Poppins, system-ui'; g.fillText(J ? tfmt(sum) : (L.length ? fmt1(sum / L.length) : '–'), cx, cy - 6 * K);
+    g.fillStyle = '#ad1457'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = 'bold ' + Math.round(22 * K) + 'px Poppins, system-ui'; g.fillText(J ? tfmt(sum) : (L.length ? fmt1(sum / Math.max(1, L.filter(function (x) { return !x.ajoute; }).length)) : '–'), cx, cy - 6 * K);
     g.fillStyle = '#8a6573'; g.font = Math.round(10 * K) + 'px Poppins, system-ui'; g.fillText(J ? 'à réviser' : 'moy. sur 5', cx, cy + 12 * K);
     
   }
   /* courbe de l'oubli : note obtenue à chaque révision selon le nombre de jours écoulés depuis la précédente */
-  function oubliPts() {
+  /* ---------- courbe de l'oubli : points, baisse due au retard ---------- */
+  var DEC = null, MINPTS = 5;
+  function pinkCol(a, al) { var c = scale(Math.min(5, a) * 0.8 + 0.2), m = /(\d+),(\d+),(\d+)/.exec(c); return 'rgba(' + m[1] + ',' + m[2] + ',' + m[3] + ',' + al + ')'; }
+  function greyCol(a, al) { var f = Math.min(5, a) / 5, v = Math.round(70 + 135 * f); return 'rgba(' + v + ',' + v + ',' + (v + 5) + ',' + al + ')'; }
+  function oubliAll() {
     var P = [], lim = TODAY() - 100; (data.hist || []).forEach(function (h) {
-      if (!h.avant || !h.avant.evalue || !h.jour || dnum(h.jour) < lim || (h.avant.succes || 0) < (data.reglages.oubliMin === 0 ? 0 : 3)) return; var g = dnum(h.jour) - dnum(h.avant.evalue);
-      if (g >= 0 && g <= 100 && typeof h.niveau === 'number') P.push({ g: g, n: Math.min(5, h.niveau) });
+      if (!h.avant || !h.avant.evalue || !h.jour || dnum(h.jour) < lim || typeof h.niveau !== 'number') return;
+      var g = dnum(h.jour) - dnum(h.avant.evalue), a = Math.min(5, h.avant.succes || 0);
+      if (g < 0 || g > 100) return;
+      var I = interval(a), tol = Math.max(1, Math.round(I * 0.2));
+      P.push({ g: g, n: Math.min(5, h.niveau), a: a, I: I, tol: tol, pink: Math.abs(g - I) <= tol, late: g > I + tol });
     }); return P;
   }
+  /* modèle par niveau : note attendue = a0 · e^(−(retard)/τ) ; τ ajusté sur les points en retard */
+  function decay() {
+    if (DEC) return DEC;
+    var P = oubliAll(), lv = [];
+    for (var a = 0; a <= 5; a++) {
+      var Q = P.filter(function (p) { return p.a === a; }), pk = Q.filter(function (p) { return p.pink; }), lt = Q.filter(function (p) { return p.late; }), m = null;
+      if (Q.length >= MINPTS) {
+        var a0 = Math.max(0.3, pk.length >= 2 ? mean(pk.map(function (p) { return p.n; })) : a), I = interval(a), tau = Infinity;
+        if (lt.length >= 3) {
+          var best = 1e18; for (var T = 2; T <= 600; T = Math.ceil(T * 1.12)) {
+            var e = 0; lt.forEach(function (p) { var d = p.n - a0 * Math.exp(-(p.g - I) / T); e += d * d; });
+            if (e < best) { best = e; tau = T; }
+          }
+        }
+        m = { a: a, a0: a0, I: I, tau: tau, n: Q.length, late: lt.length };
+      }
+      lv.push(m);
+    }
+    DEC = { lv: lv, P: P }; return DEC;
+  }
+  function decayAt(m, gap) { if (gap <= m.I || !isFinite(m.tau)) return m.a0; return m.a0 * Math.exp(-(gap - m.I) / m.tau); }
+  function lateDays(x) { var d = Math.floor(TODAY() - revision(x)); return d > 0 ? d : 0; }
+  /* niveau effectif (peut avoir une virgule) : le niveau affiché baisse avec le retard, d'après la courbe de décroissance */
+  function effLvl(x) {
+    var L = lvl(x); if (data.reglages.baisseOff) return L;
+    var b = Math.min(5, L), m = decay().lv[b], late = lateDays(x); if (!m || !isFinite(m.tau) || !late) return L;
+    return Math.round((b * Math.exp(-late / m.tau) + (L - b)) * 10) / 10;
+  }
   function drawOubli(cv) {
-    var P = oubliPts(), w = cv.clientWidth || 320, h = Math.round(Math.min(Math.max(220, w * 0.55), 340)), dpr = window.devicePixelRatio || 1;
+    var D = decay(), PA = D.P, sel = data.reglages.oubliNiv; sel = typeof sel === 'number' ? sel : -1;
+    var P = sel >= 0 ? PA.filter(function (p) { return p.a === sel; }) : PA, PK = P.filter(function (p) { return p.pink; });
+    var w = cv.clientWidth || 320, h = Math.round(Math.min(Math.max(220, w * 0.55), 340)), dpr = window.devicePixelRatio || 1;
     cv.width = w * dpr; cv.height = h * dpr; cv.style.height = h + 'px';
     var g = cv.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, w, h); g.globalAlpha = ANIM;
     var L0 = 30, R0 = w - 10, T = 14, B = h - 26;
@@ -732,49 +817,54 @@
     for (var v = 0; v <= 5; v++) { g.beginPath(); g.moveTo(L0, Y(v)); g.lineTo(R0, Y(v)); g.stroke(); g.fillText(v, L0 - 5, Y(v) + 3); }
     g.textAlign = 'center'; [0, 10, 25, 50, 75, 100].forEach(function (d) { g.fillText(d + ' j', X(d), B + 15); });
     g.fillStyle = 'rgba(249,211,224,.55)'; g.fillRect(L0, Y(5), R0 - L0, Y(4.5) - Y(5));
-    /* J idéaux */
-    var iv = data.reglages.intervalles.slice(0, 6); g.setLineDash([3, 3]); g.strokeStyle = '#e0a3b8'; iv.forEach(function (d) { if (d <= 100) { g.beginPath(); g.moveTo(X(d), T); g.lineTo(X(d), B); g.stroke(); g.fillStyle = '#b55a7c'; g.fillText('J' + d, X(d), T - 3); } }); g.setLineDash([]);
+    var iv = sel >= 0 ? [interval(sel)] : data.reglages.intervalles.slice(0, 6);
+    g.setLineDash([3, 3]); g.strokeStyle = '#e0a3b8'; iv.forEach(function (d) { if (d <= 100) { g.beginPath(); g.moveTo(X(d), T); g.lineTo(X(d), B); g.stroke(); g.fillStyle = '#b55a7c'; g.fillText('J' + d, X(d), T - 3); } }); g.setLineDash([]);
     if (!P.length) { g.fillStyle = '#8a6573'; g.font = '13px Poppins, system-ui'; g.textAlign = 'center'; g.fillText('Pas encore de mesure', w / 2, (T + B) / 2); return; }
-    P.forEach(function (p) { g.fillStyle = 'rgba(224,82,127,.28)'; g.beginPath(); g.arc(X(p.g), Y(p.n), 3, 0, 7); g.fill(); });
+    /* tous les points : gris = en retard ou en avance, rose = à ±20 % du J prévu (nuance selon le niveau d'avant) */
+    P.filter(function (p) { return !p.pink; }).forEach(function (p) { g.fillStyle = greyCol(p.a, .6); g.beginPath(); g.arc(X(p.g), Y(p.n), 3, 0, 7); g.fill(); });
+    PK.forEach(function (p) { g.fillStyle = pinkCol(p.a, .6); g.beginPath(); g.arc(X(p.g), Y(p.n), 3.4, 0, 7); g.fill(); });
+    /* moyenne aux J prévus (au moins 3 notes, sinon grisé) */
     var lastBx = -99;
     iv.forEach(function (d) {
-      if (d > 100) return; var tol = Math.max(1, Math.round(d * 0.2)), q = P.filter(function (p) { return Math.abs(p.g - d) <= tol; });
-      if (!q.length) return; var m = q.reduce(function (a, p) { return a + p.n; }, 0) / q.length, bx = Math.min(R0 - 16, Math.max(L0 + 16, X(d))), by = B - 12; if (bx - lastBx < 34) by -= 22; lastBx = bx;
-      g.fillStyle = scale(m); g.beginPath(); if (g.roundRect) g.roundRect(bx - 16, by - 9, 32, 18, 9); else g.rect(bx - 16, by - 9, 32, 18); g.fill();
-      g.fillStyle = m < 3.2 ? '#fff' : '#5c1530'; g.font = 'bold 11px Poppins, system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(fmt1(Math.round(m * 10) / 10), bx, by); g.textBaseline = 'alphabetic';
+      if (d > 100) return; var q = PK.filter(function (p) { return p.I === d; });
+      if (!q.length) return; var m = q.reduce(function (a, p) { return a + p.n; }, 0) / q.length, few = q.length < 3, bx = Math.min(R0 - 16, Math.max(L0 + 16, X(d))), by = B - 12; if (bx - lastBx < 34) by -= 22; lastBx = bx;
+      g.fillStyle = few ? '#e4dde0' : scale(m); g.beginPath(); if (g.roundRect) g.roundRect(bx - 16, by - 9, 32, 18, 9); else g.rect(bx - 16, by - 9, 32, 18); g.fill();
+      g.fillStyle = few ? '#8a7a80' : (m < 3.2 ? '#fff' : '#5c1530'); g.font = 'bold 11px Poppins, system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(fmt1(Math.round(m * 10) / 10), bx, by); g.textBaseline = 'alphabetic';
     });
-    /* moyenne lissée : chaque jour de 0 à 100 = moyenne pondérée des révisions voisines (noyau gaussien) */
+    /* moyenne lissée des points roses uniquement */
     var pts = [], sg = 7;
     for (var d = 0; d <= 100; d += 1) {
-      var sw = 0, sv = 0; P.forEach(function (p) { var z = (p.g - d) / sg, wgt = Math.exp(-z * z / 2); sw += wgt; sv += wgt * p.n; });
+      var sw = 0, sv = 0; PK.forEach(function (p) { var z = (p.g - d) / sg, wgt = Math.exp(-z * z / 2); sw += wgt; sv += wgt * p.n; });
       if (sw >= 1.2) pts.push({ x: d, y: sv / sw });
     }
     if (pts.length > 1) {
       g.beginPath(); pts.forEach(function (p, i) { if (i) g.lineTo(X(p.x), Y(p.y)); else g.moveTo(X(p.x), Y(p.y)); });
-      g.lineTo(X(pts[pts.length - 1].x), B); g.lineTo(X(pts[0].x), B); g.closePath(); var topY = B; pts.forEach(function (p) { topY = Math.min(topY, Y(p.y)); }); var gr = g.createLinearGradient(0, topY, 0, B); gr.addColorStop(0, 'rgba(248,83,139,.55)'); gr.addColorStop(.6, 'rgba(248,83,139,.18)'); gr.addColorStop(1, 'rgba(248,83,139,0)'); g.fillStyle = gr; g.fill();
+      g.lineTo(X(pts[pts.length - 1].x), B); g.lineTo(X(pts[0].x), B); g.closePath(); var topY = B; pts.forEach(function (p) { topY = Math.min(topY, Y(p.y)); }); var gr = g.createLinearGradient(0, topY, 0, B); gr.addColorStop(0, 'rgba(248,83,139,.5)'); gr.addColorStop(.6, 'rgba(248,83,139,.16)'); gr.addColorStop(1, 'rgba(248,83,139,0)'); g.fillStyle = gr; g.fill();
       g.strokeStyle = '#ad1457'; g.lineWidth = 3; g.lineJoin = 'round'; g.lineCap = 'round'; g.beginPath(); pts.forEach(function (p, i) { if (i) g.lineTo(X(p.x), Y(p.y)); else g.moveTo(X(p.x), Y(p.y)); }); g.stroke();
     }
+    /* courbes de décroissance par niveau (depuis le J prévu) */
+    g.lineWidth = 1.8; g.setLineDash([5, 4]);
+    D.lv.forEach(function (m, a) {
+      if (!m || !isFinite(m.tau) || (sel >= 0 && sel !== a) || m.I > 100) return;
+      g.strokeStyle = greyCol(a, .95); g.beginPath(); g.moveTo(X(m.I), Y(m.a0));
+      for (var dd = m.I + 1; dd <= 100; dd += 1) g.lineTo(X(dd), Y(decayAt(m, dd)));
+      g.stroke();
+    }); g.setLineDash([]);
   }
-  /* note attendue (0-5) après `gap` jours, d'après la courbe de l'oubli lissée ; null si pas assez de données */
-  function retentionFn() {
-    var P = oubliPts(); if (P.length < 30) return null;
-    return function (gap) {
-      var sw = 0, sv = 0; P.forEach(function (p) { var z = (p.g - gap) / 7, wg = Math.exp(-z * z / 2); sw += wg; sv += wg * p.n; });
-      return sw >= 1.2 ? sv / sw : null;
-    };
-  }
-  function drawCharge(cv, L, t, ax) {
+  /* note attendue après `gap` jours pour un exo de niveau `pl` ; null si pas assez de données pour ce niveau */
+  function expectNote(pl, gap) { var m = decay().lv[Math.min(5, pl)]; return m ? decayAt(m, gap) : null; }
+  function drawCharge(cv, L, t, ax, extra, noDraw) {
     var N = 42, late = [], lateEx = [], ex = [], nm = [], pv = [], pvL = [], pvE = [], pvLE = [], cnt = []; for (var i = 0; i < N; i++) { late.push(0); lateEx.push(0); ex.push(0); nm.push(0); pv.push(0); pvL.push(0); pvE.push(0); pvLE.push(0); cnt.push(0); }
-    var RETREAL = data.reglages.prevOff ? null : retentionFn(), RET = data.reglages.prevOff ? null : (RETREAL || function () { return 5; }), vc = 0;
+    var RET = !data.reglages.prevOff, vc = 0;
     var cand = [];
     data.ex.forEach(function (x, i) { if (visible(x) && x.evalue) cand.push({ x: x, r: revision(x), ex: modeExam(x), i: i, m: mins(x) }); });
-    function lvO(o) { return o.v ? o.L : lvl(o.x); }
+    function lvO(o) { return o.v ? o.L : prio(o.x); }
     function srt() { cand.sort(function (a, b) { return ((a.ex ? 0 : 1) * 1e11 + a.r * 1e5 + lvO(a) * 1e4 + (a.v ? 5e3 : 0) + (a.i + '' === a.i ? 0 : a.i)) - ((b.ex ? 0 : 1) * 1e11 + b.r * 1e5 + lvO(b) * 1e4 + (b.v ? 5e3 : 0) + (b.i + '' === b.i ? 0 : b.i)); }); }
     srt();
     var done = {};
     for (var d = 0; d < N; d++) {
       var wd = new Date((t + d) * DAY).getUTCDay(), bud = data.reglages.planning[(wd + 6) % 7];
-      bud = typeof bud === 'number' && !isNaN(bud) ? bud : 1e9;
+      bud = typeof bud === 'number' && !isNaN(bud) ? bud : 1e9; if (extra && bud < 1e9 && bud > 0) bud += extra;
       var cum = 0, fait = d === 0 ? dejaFait() : 0; if (RET && d > 0) srt();
       cand.forEach(function (o) {
         if (done[o.i] || o.r >= t + d + 1) return;
@@ -784,9 +874,9 @@
           cum += o.m;
           done[o.i] = 1; if (!o.v) cnt[d]++;
           if (RET) {
-            var ox = o.v ? o.x : o.x, gp = t + d - (o.v ? o.ev : dnum(o.x.evalue)), nt = gp >= 0 ? RET(gp) : null;
-            if (nt !== null) {
-              var pl = o.v ? o.L : lvl(o.x), nl = Math.min(5, Math.round(nt)); if (!RETREAL) nl = pl + 1; else if (nl >= 5 && pl >= 5) nl = pl + 1;
+            var ox = o.x, gp = t + d - (o.v ? o.ev : dnum(o.x.evalue));
+            if (gp >= 0) {
+              var pl = o.v ? o.L : lvl(o.x), nt = expectNote(pl, gp), nl = nt === null ? pl + 1 : Math.min(5, Math.round(nt)); if (nt !== null && nl >= 5 && pl >= 5) nl = pl + 1;
               var r2 = Math.max(revisionAt(ox, t + d, interval(nl)), t + d + 1); if (r2 < t + N) cand.push({ v: true, x: ox, L: nl, ev: t + d, r: r2, ex: examAt(ox, t + d), i: 'v' + (vc++), m: o.m });
             }
           }
@@ -794,6 +884,8 @@
         }
       });
     }
+    var lastLate = -1; for (var q0 = 0; q0 < N; q0++) if (late[q0] + lateEx[q0] + pvL[q0] + pvLE[q0] > 0) lastLate = q0;
+    var res = { lastLate: lastLate, N: N }; if (noDraw) return res;
     var w = 4 + N * 40 + 4, h = 210, dpr = window.devicePixelRatio || 1;
     cv.width = w * dpr; cv.height = h * dpr; cv.style.height = h + 'px'; cv.style.width = w + 'px';
     var g = cv.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, w, h);
@@ -809,7 +901,7 @@
     }
     g.font = '10px Poppins, system-ui'; g.fillStyle = '#a58593'; g.strokeStyle = '#f1dde5'; g.textAlign = 'right'; g.lineWidth = 1; g.setLineDash([2, 4]);
     var ga = null; if (ax) { ax.width = 34 * dpr; ax.height = h * dpr; ax.style.width = '34px'; ax.style.height = h + 'px'; ga = ax.getContext('2d'); ga.scale(dpr, dpr); ga.clearRect(0, 0, 34, h); ga.font = '10px Poppins, system-ui'; ga.fillStyle = '#a58593'; ga.textAlign = 'right'; }
-    for (var v = 0; v <= mx; v += step) { var y = B - (B - T) * v / mx; g.beginPath(); g.moveTo(L0, y); g.lineTo(w, y); g.stroke(); if (ax) { ga.fillText(v >= 60 ? (v / 60) + ' h' : v + ' min', 30, y + 3); } }
+    for (var v = 0; v <= mx; v += step) { var y = B - (B - T) * v / mx; if (ax) { ga.fillText(v >= 60 ? (v / 60) + ' h' : v + ' min', 30, y + 3); } }
     g.setLineDash([]); g.textAlign = 'center';
     for (var j = 0; j < N; j++) {
       var x0 = L0 + j * bw + bw * 0.16, ww = bw * 0.68, yy = B, th = (B - T) * tot[j] / mx * ANIM;
@@ -830,6 +922,7 @@
       g.fillStyle = '#5c1530'; g.font = 'bold 10px Poppins, system-ui'; g.fillText(String(dd.getUTCDate()), cx, B + 24);
       g.fillStyle = '#b79aa7'; g.font = '8px Poppins, system-ui'; g.fillText(cnt[j] + ' ex.', cx, B + 35);
     }
+    return res;
   }
 
   /* ---------- vue : réglages ---------- */
@@ -852,15 +945,61 @@
     l.appendChild(el('span', '', label)); r.appendChild(l);
     var f = el('span', 'sf'); f.appendChild(numInput(val, cb)); f.appendChild(el('em', '', unit)); r.appendChild(f); card.appendChild(r);
   }
+  var setTab = 'planning';
+  function switchRow(card, label, get, set, sub) {
+    var r = el('div', 'srow'), l = el('span', 'sl'); l.appendChild(el('span', '', label)); if (sub) { var sm = el('small', 'muted', sub); sm.style.display = 'block'; l.appendChild(sm); } r.appendChild(l);
+    var b = el('button', 'sw' + (get() ? ' on' : '')); b.type = 'button'; b.setAttribute('role', 'switch'); b.setAttribute('aria-checked', get() ? 'true' : 'false'); b.appendChild(el('i'));
+    b.addEventListener('click', function () { set(!get()); save(); renderSet(); }); r.appendChild(b); card.appendChild(r);
+  }
+  function rulesCard() {
+    var R = data.reglages, c = el('div', 'scard rules'), iv = R.intervalles.slice(0, 6).map(function (v, i) { return i + ' → ' + v + ' j'; }).join(' · ');
+    function sec(t, lines) { var d = el('div', 'rsec'); d.appendChild(el('h3', '', t)); lines.forEach(function (l) { d.appendChild(el('p', '', l)); }); c.appendChild(d); }
+    var bud = R.planning.map(function (v, i) { return JOURS[i] + ' ' + (typeof v === 'number' && !isNaN(v) ? v + ' min' : 'sans limite'); }).join(' · ');
+    c.appendChild(el('h2', 'rtitle', 'Toutes les règles de l’appli'));
+    sec('Niveaux et intervalles', ['Quand tu refais un exercice (✓) tu lui donnes un niveau de 0 à 5. La prochaine révision tombe après : ' + iv + '.', 'Après un 5, chaque 5 de plus d’affilée repousse la révision de ' + R.pasApres5 + ' j de plus (niveaux 6, 7…).']);
+    sec('Mode examen', ['À moins de ' + R.debutExam + ' j d’un examen, les révisions de la matière sont compressées pour que tout soit vu avant l’examen : fait plus de ' + R.seuilButoire + ' j avant, on s’arrête ' + R.butoireSi + ' j avant ; sinon ' + (R.butoireSinon > 1 ? R.butoireSinon + ' j' : 'la veille') + ' avant.', 'Le mode est jugé à la date de chaque révision : une révision qui tombe après l’examen redevient normale.', 'Les exos en mode examen passent avant les autres.']);
+    sec('Budget du jour et priorités', ['Budget par jour : ' + bud + '.', 'Les exos sont classés : mode examen d’abord, puis les plus anciens à revoir, puis le niveau le plus bas. Ceux qui ne rentrent pas dans le budget attendent (un plus court peut passer devant).', 'Sans limite : aujourd’hui, le temps affiché ne dépasse pas les heures qu’il reste jusqu’à demain, arrondies à l’heure du dessus (« Il reste X h ») ; les autres jours sans limite comptent au plus 24 h.']);
+    sec('Reporter', ['La flèche écarte un exo d’aujourd’hui : il ne prend plus de temps dans ton budget, mais sa date de révision ne change pas. Il revient demain.']);
+    sec('Note effective (retard)', ['Un exo en retard perd de sa valeur : sa note affichée ne change pas, mais sa note effective baisse (elle peut avoir une virgule). Elle sert dans « Moyenne par matière » et dans les examens.', 'La baisse vient de la courbe de décroissance de chaque niveau, mesurée sur tes révisions en retard. Il faut au moins ' + MINPTS + ' révisions pour un niveau, sinon aucune baisse n’est appliquée.', 'Cette règle est ' + (R.baisseOff ? 'désactivée' : 'activée') + ' (réglage dans l’onglet Niveaux).']);
+    sec('Courbe de l’oubli', ['Chaque révision est un point : rose si faite à ±20 % du J prévu pour son niveau (au moins 1 j), gris sinon (en retard ou trop en avance). Seuls les roses comptent dans la moyenne lissée ; les gris servent à mesurer la baisse due au retard.']);
+    sec('Prévisions de charge', ['Chaque exo prévu est rejoué dans le futur : à la date prévue il est supposé refait, avec la note attendue d’après la courbe de décroissance de son niveau ; sans assez de données, il gagne simplement 1 niveau.', 'La date de rattrapage est le dernier jour où il reste du retard dans les prévisions.']);
+    sec('Exercices « Ajouté »', ['Un exo ajouté sans note n’écrit rien dans l’historique. Sa révision est toujours aujourd’hui, avec la priorité la plus basse (comme un 3 prévu). Il est gris dans les anneaux et ne compte pas dans les moyennes. Sa première révision lui donne sa vraie note.']);
+    sec('Minuteur et série', ['Le minuteur décompte le temps prévu de l’exo : vert tant que tu es dans les temps, rouge au-delà (« +3:12 ») sans s’arrêter. Le temps total est repris quand tu valides.', 'La flamme 🔥 compte les jours de suite avec au moins une révision.']);
+    sec('Filtres', ['Les filtres de semestres et de matières s’appliquent à tous les onglets. Une matière présente dans plusieurs semestres ne compte qu’une fois.']);
+    return c;
+  }
   function renderSet() {
     var box = $('v-set'); box.textContent = ''; var R = data.reglages;
-    var c1 = setCard('Intervalles de révision', 'cal');
-    for (var n = 0; n < 6; n++) (function (n) {
-      setRow(c1, NIV[n] + ' : prochaine révision dans', R.intervalles[n], function (v) { R.intervalles[n] = v === null ? 0 : v; }, 'jours', n);
-    })(n);
-    setRow(c1, 'Après un 5 : chaque 5 de plus d’affilée (note 6 = 2 fois 5 de suite, note 7 = 3 fois…) repousse la révision de', R.pasApres5, function (v) { R.pasApres5 = v === null ? 0 : v; }, 'jours');
-    box.appendChild(c1);
-
+    var tabs = el('div', 'seg settabs'); [['planning', 'Planning'], ['niveaux', 'Niveaux'], ['apparence', 'Apparence'], ['donnees', 'Données'], ['regles', 'Règles']].forEach(function (o) {
+      var b = el('button', setTab === o[0] ? 'on' : '', o[1]); b.type = 'button'; b.addEventListener('click', function () { setTab = o[0]; renderSet(); }); tabs.appendChild(b);
+    }); box.appendChild(tabs);
+    if (setTab === 'planning') {
+    var c2 = setCard('Mode examen', 'flag');
+    [['Début du mode examen : jours avant l’examen', 'debutExam', 'jours'], ['Butoire : seuil — un exo fait plus de … jours avant l’examen est « tôt », sinon « tard »', 'seuilButoire', 'jours'], ['Butoire si fait tôt : ne plus réviser … jours avant l’examen', 'butoireSi', 'jours'], ['Butoire sinon (fait tard) : ne plus réviser … jours avant l’examen (0 ou 1 = jusqu’à la veille de l’examen)', 'butoireSinon', 'jours'], ['Minutes comptées par exo sans durée', 'minutesDefaut', 'min']].forEach(function (a) {
+      setRow(c2, a[0], R[a[1]], function (v) { R[a[1]] = v === null ? 0 : v; }, a[2]);
+    });
+      box.appendChild(c2);
+      var c3 = setCard('Planning de la semaine (minutes)', 'clock'), wk = el('div', 'week');
+      JOURS.forEach(function (j, i) {
+        var d = el('label', 'wday'); d.appendChild(el('b', '', j)); d.appendChild(numInput(R.planning[i], function (v) { R.planning[i] = v; })); d.appendChild(el('em', '', 'min')); wk.appendChild(d);
+      });
+      c3.appendChild(wk); box.appendChild(c3);
+      var c4 = setCard('Temps par défaut', 'clock'); setRow(c4, 'Durée d’un exercice sans durée indiquée', R.minutesDefaut, function (v) { R.minutesDefaut = v === null || v < 1 ? 5 : v; }, 'min'); box.appendChild(c4);
+    } else if (setTab === 'niveaux') {
+      var c1 = setCard('Intervalles de révision', 'cal');
+      for (var n = 0; n < 6; n++) (function (n) {
+        setRow(c1, NIV[n] + ' : prochaine révision dans', R.intervalles[n], function (v) { R.intervalles[n] = v === null ? 0 : v; }, 'jours', n);
+      })(n);
+      setRow(c1, 'Après un 5 : chaque 5 de plus d’affilée (note 6 = 2 fois 5 de suite, note 7 = 3 fois…) repousse la révision de', R.pasApres5, function (v) { R.pasApres5 = v === null ? 0 : v; }, 'jours');
+      box.appendChild(c1);
+      var cb = setCard('Baisse due au retard', 'flag');
+      switchRow(cb, 'Faire baisser la note d’un exo en retard', function () { return !R.baisseOff; }, function (v) { R.baisseOff = !v; }, 'La note affichée ne change pas ; la note effective baisse d’après ta courbe de l’oubli.');
+      var D = decay(); D.lv.forEach(function (m, a) {
+        var r = el('div', 'srow'); var l = el('span', 'sl'); var bd = el('i', 'sbadge', String(a)); bd.style.background = scale(a); bd.style.color = a < 3.2 ? '#fff' : '#5c1530'; l.appendChild(bd);
+        l.appendChild(el('span', '', !m ? 'Pas assez de données (moins de ' + MINPTS + ' révisions) : pas de baisse' : !isFinite(m.tau) ? m.n + ' révisions, pas assez de retards pour mesurer' : m.n + ' révisions · perd environ ' + Math.round((1 - Math.exp(-7 / m.tau)) * 100) + ' % par semaine de retard')); r.appendChild(l); cb.appendChild(r);
+      });
+      box.appendChild(cb);
+    } else if (setTab === 'apparence') {
     var cT = setCard('Thème', 'cal'), sw = el('div', 'seg'), cur = themeDeg();
     THEMES.forEach(function (t) {
       var b = el('button', cur[0] === t[0] ? 'on' : '', t[0]); b.type = 'button';
@@ -869,18 +1008,14 @@
       sw.appendChild(b);
     });
     cT.appendChild(sw); box.appendChild(cT);
-
-    var c2 = setCard('Mode examen', 'flag');
-    [['Début du mode examen : jours avant l’examen', 'debutExam', 'jours'], ['Butoire : seuil — un exo fait plus de … jours avant l’examen est « tôt », sinon « tard »', 'seuilButoire', 'jours'], ['Butoire si fait tôt : ne plus réviser … jours avant l’examen', 'butoireSi', 'jours'], ['Butoire sinon (fait tard) : ne plus réviser … jours avant l’examen (0 ou 1 = jusqu’à la veille de l’examen)', 'butoireSinon', 'jours'], ['Minutes comptées par exo sans durée', 'minutesDefaut', 'min']].forEach(function (a) {
-      setRow(c2, a[0], R[a[1]], function (v) { R[a[1]] = v === null ? 0 : v; }, a[2]);
-    });
-    box.appendChild(c2);
-
-    var c3 = setCard('Planning de la semaine (minutes)', 'clock'), wk = el('div', 'week');
-    JOURS.forEach(function (j, i) {
-      var d = el('label', 'wday'); d.appendChild(el('b', '', j)); d.appendChild(numInput(R.planning[i], function (v) { R.planning[i] = v; })); d.appendChild(el('em', '', 'min')); wk.appendChild(d);
-    });
-    c3.appendChild(wk); box.appendChild(c3);
+      var cc = setCard('Tableau de bord', 'cal'), sg2 = el('div', 'seg'); [[1, '1 colonne'], [2, '2 colonnes']].forEach(function (o) { var bb = el('button', (R.dashCols === 2 ? 2 : 1) === o[0] ? 'on' : '', o[1]); bb.type = 'button'; bb.addEventListener('click', function () { R.dashCols = o[0]; save(); renderSet(); }); sg2.appendChild(bb); }); cc.appendChild(sg2); cc.appendChild(el('p', 'muted', 'Sur grand écran. L’ordre et l’affichage des cartes se règlent avec le crayon du tableau de bord.')); box.appendChild(cc);
+    } else if (setTab === 'donnees') {
+      var cd = setCard('Données', 'cal');
+      [['Synchroniser avec mon Drive', 'syncBtn'], ['Changer l’adresse de synchronisation', 'syncUrlBtn'], ['Importer un fichier (tableur ou sauvegarde)', 'importSheet'], ['Exporter mes données (.json)', 'exportBtn'], ['Restaurer une ancienne sauvegarde', 'versBtn']].forEach(function (o) {
+        var b = el('button', 'row', o[0]); b.type = 'button'; b.addEventListener('click', function () { $(o[1]).click(); }); cd.appendChild(b);
+      });
+      box.appendChild(cd);
+    } else box.appendChild(rulesCard());
   }
 
   /* ---------- édition d'un exercice ---------- */
@@ -892,28 +1027,108 @@
     $('fMat').textContent = ''; data.mats.forEach(function (m) { if (m.semestre === $('fSem').value) { var o = el('option', '', m.nom); o.value = m.nom; $('fMat').appendChild(o); } });
     if (sel) $('fMat').value = sel;
   }
+  /* ---------- flèche du temps : occurrences faites (roses) et prévues (grises) ---------- */
+  function occDone(x) { return (data.hist || []).filter(function (h) { return h.id === x.id && h.jour && typeof h.niveau === 'number'; }).sort(function (a, b) { return a.ts - b.ts; }).map(function (h) { return { d: dnum(h.jour), n: h.niveau, m: h.m }; }); }
+  function occPred(x, end) {
+    var out = [], lv = lvl(x), ev = x.ajoute ? TODAY() : dnum(x.evalue), d = Math.max(revision(x), TODAY());
+    while (d <= end && out.length < 60) {
+      out.push(d); var gp = d - ev, nt = expectNote(lv, gp), nl = nt === null ? lv + 1 : Math.min(5, Math.round(nt)); if (nt !== null && nl >= 5 && lv >= 5) nl = lv + 1;
+      var r2 = Math.max(revisionAt(x, d, interval(nl)), d + 1); lv = nl; ev = d; d = r2;
+    }
+    return out;
+  }
+  /* rows : [{ name, x, done:[{d,n}], pred:[d] }] ; start/end : jours (numéros) ; opt : { ppd, noNames, examDay } */
+  function buildTL(rows, start, end, opt) {
+    opt = opt || {}; var ppd = opt.ppd || 12, W = Math.max(60, Math.ceil((end - start + 1) * ppd)), NW = opt.noNames ? 0 : 98, t = TODAY();
+    var sc = el('div', 'tl'), inn = el('div', 'tlin'); inn.style.width = (NW + W) + 'px';
+    function px(d) { return Math.round((d - start + 0.5) * ppd); }
+    var ax = el('div', 'tlax'), corner = el('div', 'tlc'); corner.style.width = NW + 'px'; if (NW) ax.appendChild(corner);
+    var line = el('div', 'tlline'); line.style.width = W + 'px';
+    var step = ppd >= 10 ? 7 : 14, d0 = start + ((8 - new Date(start * DAY).getUTCDay()) % 7);
+    for (var d = d0; d <= end; d += step) { var m = el('span', 'tlm', fromNum(d).slice(0, 5)); m.style.left = px(d) + 'px'; line.appendChild(m); }
+    var ah = el('i', 'tlarrow'); line.appendChild(ah); ax.appendChild(line); inn.appendChild(ax);
+    rows.forEach(function (r, i) {
+      var row = el('div', 'tlr' + (i % 2 ? ' alt' : ''));
+      if (NW) { var nm = el('div', 'tln', r.name); nm.title = r.name; if (r.x) nm.addEventListener('click', function () { openEditor(r.x.id); }); row.appendChild(nm); }
+      var ar = el('div', 'tla'); ar.style.width = W + 'px';
+      r.pred.forEach(function (d) { if (d < start || d > end) return; var k = el('i', 'tk pred'); k.style.left = px(d) + 'px'; ar.appendChild(k); });
+      r.done.forEach(function (o) { if (o.d < start || o.d > end) return; var k = el('i', 'tk done'); k.style.left = px(o.d) + 'px'; k.style.background = pinkCol(o.n, 1); k.appendChild(el('em', '', String(o.n))); ar.appendChild(k); });
+      row.appendChild(ar); inn.appendChild(row);
+    });
+    var tl = el('i', 'tlnow'); tl.style.left = (NW + px(t)) + 'px'; inn.appendChild(tl);
+    if (opt.examDay) { var ef = el('i', 'tlexam'); ef.style.left = (NW + px(opt.examDay)) + 'px'; ef.title = 'Examen'; inn.appendChild(ef); }
+    sc.appendChild(inn);
+    setTimeout(function () { sc.scrollLeft = Math.max(0, NW + px(t) - sc.clientWidth / 2 - NW / 2); }, 0);
+    return sc;
+  }
+  /* ---------- vue détaillée d'un examen ---------- */
+  var examSel = null, examFrom = 'exam';
+  function openExam(m) { examSel = { semestre: m.semestre, nom: m.nom }; examFrom = examFrom || 'exam'; renderExamView(); var d = $('examDlg'); if (!d.open) d.showModal(); }
+  function renderExamView() {
+    var d = $('examDlg'); if (!examSel || !d.open && !d.hasAttribute('open') && false) return;
+    var m = data.mats.filter(function (z) { return z.semestre === examSel.semestre && z.nom === examSel.nom; })[0], b = $('examBody'), keep = b.querySelector('.tl'), kl = keep ? keep.scrollLeft : null, kt = keep ? keep.scrollTop : null;
+    b.textContent = ''; if (!m || !m.examen) { b.appendChild(el('p', 'muted', 'Pas de date d’examen pour cette matière.')); return; }
+    var t = TODAY(), E = dnum(m.examen), J = E - t, R = data.reglages;
+    var es = data.ex.filter(function (x) { return x.semestre === m.semestre && x.matiere === m.nom && x.evalue; });
+    $('examTitle').textContent = m.nom;
+    var hd = el('div', 'exh'); hd.appendChild(el('span', 'chip', m.semestre)); hd.appendChild(el('b', '', 'Examen le ' + fromNum(E))); hd.appendChild(el('span', 'jbig', J > 0 ? 'J-' + J : J === 0 ? 'Aujourd’hui' : 'Passé')); b.appendChild(hd);
+    var from = examFrom === 'all' ? -1e9 : E - R.debutExam;
+    var rows = es.map(function (x, i) { return { name: x.intitule || 'Exo ' + (i + 1), x: x, done: occDone(x), pred: occPred(x, E) }; });
+    var fait = 0, prevu = 0; rows.forEach(function (r) { r.done.forEach(function (o) { if (o.d >= from) fait += o.m || mins(r.x); }); r.pred.forEach(function () { prevu += mins(r.x); }); });
+    var tot = fait + prevu, st = el('div', 'exst');
+    st.appendChild(el('div', 'exsl', 'Temps fait : ' + dur(Math.round(fait)) + ' sur ' + dur(Math.round(tot)) + ' prévus'));
+    var bar = el('div', 'exbar'), fi = el('i'); fi.style.width = (tot ? Math.min(100, fait / tot * 100) : 0) + '%'; bar.appendChild(fi); st.appendChild(bar);
+    st.appendChild(el('div', 'muted', 'Temps prévu = ce qui est déjà fait + les révisions grises prévues jusqu’à l’examen.'));
+    var ok = es.filter(function (x) { return !x.ajoute && revision(x) > E - 1; }).length;
+    st.appendChild(el('div', 'exsl', ok + ' exercice' + (ok > 1 ? 's' : '') + ' à jour pour l’examen · ' + (es.length - ok) + ' à revoir'));
+    var rep = el('div', 'exrep'); for (var n = 0; n <= 5; n++) { var c = es.filter(function (x) { return !x.ajoute && Math.min(5, lvl(x)) === n; }).length, cell = el('span', 'exlv'); cell.style.background = scale(n); cell.style.color = n < 3.2 ? '#fff' : '#5c1530'; cell.appendChild(el('b', '', String(n))); cell.appendChild(el('small', '', String(c))); rep.appendChild(cell); }
+    st.appendChild(rep); b.appendChild(st);
+    var sg = el('div', 'seg'); [['exam', 'Depuis le mode examen'], ['all', 'Tout']].forEach(function (o) { var bt = el('button', examFrom === o[0] ? 'on' : '', o[1]); bt.type = 'button'; bt.addEventListener('click', function () { examFrom = o[0]; renderExamView(); }); sg.appendChild(bt); }); b.appendChild(sg);
+    var first = E - R.debutExam; if (examFrom === 'all') rows.forEach(function (r) { r.done.forEach(function (o) { first = Math.min(first, o.d); }); }); first = Math.min(first, t - 3);
+    if (rows.length) {
+      var tl = buildTL(rows, first - 1, E + 2, { ppd: 11, examDay: E }); b.appendChild(tl);
+      if (kl !== null) setTimeout(function () { tl.scrollLeft = kl; tl.scrollTop = kt; }, 1);
+      var lg = el('div', 'legend'); [['Révision faite (note au-dessus)', '#e0527f'], ['Révision prévue', '#c9c3c7']].forEach(function (a) { var sp = el('span'), i = el('i'); i.style.background = a[1]; sp.appendChild(i); sp.appendChild(document.createTextNode(a[0])); lg.appendChild(sp); }); b.appendChild(lg);
+    } else b.appendChild(el('p', 'muted', 'Aucun exercice pour cette matière.'));
+    b.appendChild(el('h3', 'exlt', 'Exercices de la matière'));
+    es.map(function (x) { return { x: x, r: revision(x), ex: modeExam(x) }; }).sort(function (a, c) { return a.r - c.r || prio(a.x) - prio(c.x); }).forEach(function (o) { b.appendChild(exoCard(o, 'lite')); });
+  }
+  /* ---------- fenêtre d'un exercice : flèche, retard, note effective ---------- */
+  function editorInfo(x) {
+    var box = $('edInfo'); box.textContent = ''; box.hidden = !x; if (!x) return;
+    var t = TODAY(), E = examNum(x.semestre, x.matiere), end = E !== null && E >= t ? E : t + 100, done = occDone(x), pred = occPred(x, end), first = done.length ? done[0].d : t - 3, tl = buildTL([{ name: '', x: x, done: done, pred: pred }], Math.min(first, t) - 3, Math.max(end, t + 14) + 2, { ppd: 9, noNames: true, examDay: E !== null && E >= t ? E : 0 });
+    box.appendChild(tl);
+    var late = lateDays(x), lx = lvl(x), ef = effLvl(x), p = el('p', 'edsent');
+    if (x.ajoute) p.textContent = 'Ajouté : pas encore de note. À réviser dès aujourd’hui, avec la priorité la plus basse.';
+    else if (late <= 0) p.textContent = 'L’exercice est à l’heure · note effective ' + fmt1(ef) + '.';
+    else if (ef !== lx) p.textContent = 'L’exercice a ' + late + ' j de retard et une note effective de ' + fmt1(ef) + '.';
+    else p.textContent = 'L’exercice a ' + late + ' j de retard' + (data.reglages.baisseOff ? ' (baisse de note désactivée).' : ' (pas assez de données pour estimer une baisse de sa note).');
+    box.appendChild(p);
+  }
+  /* série de jours consécutifs avec au moins une révision */
+  function streak(FM) { var t = TODAY(), n = 0, d = t; function k(z) { return FM[new Date(z * DAY).toISOString().slice(0, 10)] > 0; } if (!k(d)) d--; while (k(d)) { n++; d--; } return n; }
   function openEditor(id) {
     if (!data.mats.length) { toast('Ajoute d’abord une matière (onglet Matières).'); return; }
     editingId = id; var x = id ? data.ex.filter(function (e) { return e.id === id; })[0] : null;
     $('editorTitle').textContent = x ? 'Modifier l’exercice' : 'Nouvel exercice';
-    $('fSucces').textContent = ''; NIV.forEach(function (n, i) { var o = el('option', '', i + ' · ' + n); o.value = i; $('fSucces').appendChild(o); });
+    $('fSucces').textContent = ''; if (!x || x.ajoute) { var oa = el('option', '', 'Ajouté · pas encore de note'); oa.value = 'a'; $('fSucces').appendChild(oa); } NIV.forEach(function (n, i) { var o = el('option', '', i + ' · ' + n); o.value = i; $('fSucces').appendChild(o); });
     fillSem(x ? x.semestre : (data.reglages.semestres[0] || null)); if (x) fillMat(x.matiere);
-    $('fTitre').value = x ? x.intitule || '' : ''; $('fSucces').value = x ? x.succes : 3;
+    $('fTitre').value = x ? x.intitule || '' : ''; $('fSucces').value = x ? (x.ajoute ? 'a' : x.succes) : 3;
     $('fDate').value = x ? x.evalue : todayISO(); $('fMin').value = x && x.minutes ? x.minutes : ''; $('fNote').value = x && x.note ? x.note : '';
-    $('delBtn').hidden = !x; $('editor').showModal();
+    $('delBtn').hidden = !x; editorInfo(x); $('editor').showModal();
   }
   function saveEditor(ev) {
     ev.preventDefault();
-    var o = { intitule: $('fTitre').value.trim(), succes: +$('fSucces').value, semestre: $('fSem').value, matiere: $('fMat').value, minutes: $('fMin').value ? +$('fMin').value : null, evalue: $('fDate').value, note: $('fNote').value.trim() };
+    var aj = $('fSucces').value === 'a', o = { intitule: $('fTitre').value.trim(), succes: aj ? 0 : +$('fSucces').value, ajoute: aj || undefined, semestre: $('fSem').value, matiere: $('fMat').value, minutes: $('fMin').value ? +$('fMin').value : null, evalue: $('fDate').value, note: $('fNote').value.trim() };
     if (!o.matiere || !o.evalue) { toast('Choisis une matière et une date.'); return; }
-    if (editingId) { data.ex.forEach(function (x) { if (x.id === editingId) { if (x.succes !== o.succes) x.p5 = 0; Object.assign(x, o); } }); }
+    if (editingId) { data.ex.forEach(function (x) { if (x.id === editingId) { if (x.succes !== o.succes) x.p5 = 0; Object.assign(x, o); if (!aj) delete x.ajoute; } }); }
     else { o.id = newId(); data.ex.push(o); }
     save(); $('editor').close(); render(); toast('Exercice enregistré.');
   }
   function openDone(id) {
     doingId = id; var x = data.ex.filter(function (e) { return e.id === id; })[0]; if (!x) return;
     $('doneTitle').textContent = x.matiere + (x.intitule ? ' · ' + x.intitule : '');
-    $('doneTxt').textContent = ''; $('doneMin').value = mins(x); var chk = chGetAll()[id]; if (chk && chMs(chk) >= 30000) { $('doneMin').value = Math.max(1, Math.round(chMs(chk) / 60000)); $('doneTxt').textContent = 'Temps repris de ton chrono : ' + chFmt(chMs(chk)) + '.'; }
+    $('doneTxt').textContent = ''; $('doneMin').value = mins(x); var chk = chGetAll()[id]; if (chk && chMs(chk) >= 30000) { $('doneMin').value = Math.max(1, Math.round(chMs(chk) / 60000)); $('doneTxt').textContent = 'Temps repris de ton minuteur : ' + chFmt(chMs(chk)) + '.'; }
     var b = $('doneBtns'); b.textContent = '';
     NIV.forEach(function (n, i) {
       var bt = el('button', '', String(i)); bt.type = 'button'; bt.appendChild(el('small', '', n));
@@ -1190,10 +1405,12 @@
 
   /* ---------- affichage ---------- */
   function render() {
+    DEC = null;
     renderFilters(); document.body.classList.toggle('wide', view === 'dash' || view === 'set');
     ['today', 'exos', 'mats', 'dash', 'set'].forEach(function (v) { $('v-' + v).hidden = v !== view; });
     document.querySelectorAll('#tabs button').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.view === view ? 'true' : 'false'); });
     $('addBtn').hidden = view !== 'exos';
+    if ($('examDlg').open) renderExamView();
     if (view === 'today') renderToday(); else if (view === 'exos') renderExos(); else if (view === 'mats') renderMats(); else if (view === 'dash') renderDash(); else renderSet();
   }
 
@@ -1218,9 +1435,10 @@
   $('addBtn').addEventListener('click', function () { openEditor(null); });
   $('search').addEventListener('input', function () { shown = 120; renderExos(); });
   $('filtBtn').addEventListener('click', function () { $('filtDlg').showModal(); });
+  $('examBack').addEventListener('click', function () { $('examDlg').close(); });
   $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
-  $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 166'; syncLabel(); $('menu').showModal(); });
+  $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; data.reglages.matieres = []; save(); render(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 167'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
   $('syncUrlBtn').addEventListener('click', function () { $('menu').close(); syncNow(true); });

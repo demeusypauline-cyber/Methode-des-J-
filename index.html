@@ -42,8 +42,11 @@
 <div id="toast" role="status"></div>
 
 <dialog id="filtDlg">
-  <div class="mhead"><h2>Filtrer par semestre</h2><button id="closeFilt" class="xbtn" type="button" aria-label="Fermer"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="mhead"><h2>Filtres</h2><button id="closeFilt" class="xbtn" type="button" aria-label="Fermer"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="ftitle">Semestres</div>
   <div id="filtBox" class="chips fbox"></div>
+  <div class="ftitle" id="filtMatT">Matières</div>
+  <div id="filtMat" class="chips fbox"></div>
   <button id="filtAll" class="row" type="button">Tout afficher</button>
 </dialog>
 
@@ -63,6 +66,7 @@
 <dialog id="editor">
   <form id="form" method="dialog">
     <h2 id="editorTitle">Nouvel exercice</h2>
+    <div id="edInfo" hidden></div>
     <label>Semestre <select id="fSem"></select></label>
     <label>Matière <select id="fMat"></select></label>
     <label>Intitulé (facultatif) <input id="fTitre" autocomplete="off"></label>
@@ -79,6 +83,11 @@
       <button type="submit" class="primary">Enregistrer</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="examDlg" class="full">
+  <div class="exhead"><button id="examBack" class="xbtn" type="button" aria-label="Retour"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button><h2 id="examTitle">Examen</h2></div>
+  <div id="examBody"></div>
 </dialog>
 
 <dialog id="doneDlg">
