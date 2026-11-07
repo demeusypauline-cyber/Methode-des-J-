@@ -512,3 +512,9 @@ dialog.full{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-r
 /* v170 : cartes exercices au design de la carte de progression d'examen */
 .card{background:linear-gradient(160deg,#fff 0%,#fdf0f8 60%,#f6eefc 100%);border-radius:18px;padding:12px 14px;box-shadow:0 6px 18px #ad145722;border:0}
 .card.exam{background:linear-gradient(160deg,#fff 0%,#fdf0f8 60%,#f6eefc 100%)}
+
+/* v171 */
+.dhead{margin-top:-10px!important}
+.trw{display:flex;align-items:center;gap:8px}.trw .trk{flex:1;min-width:0}.ratio{flex:none;font-size:.7rem;color:#8a8087;white-space:nowrap}
+.exn{display:flex;align-items:center;gap:4px}.exn .parr{color:#8a6573;font-size:.8rem}
+.sethead{display:flex;align-items:center;gap:8px;margin-bottom:10px}.sethead h2{margin:0;font-size:1.2rem}
