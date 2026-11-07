@@ -1,4 +1,4 @@
-const CACHE = 'mes-exercices-v175';
+const CACHE = 'mes-exercices-v177';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'fonts/poppins-Regular.woff', 'fonts/poppins-Medium.woff', 'fonts/poppins-Bold.woff', 'fonts/chancery.woff'];
 
 self.addEventListener('install', function (e) {
