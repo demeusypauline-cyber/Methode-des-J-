@@ -524,3 +524,12 @@ dialog.full{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-r
 #v-set > .sethead,#v-set > .rules{grid-column:1 / -1}
 #v-set > .sethead ~ .scard:last-child:nth-child(even){grid-column:1 / -1}
 #v-set > .scard:only-child{grid-column:1 / -1}
+
+/* v178 : minuteur sobre */
+.chrono .chgo,.chrono.on,.chrono.on:not(.over),.chrono.over{background:#fff;border:1px solid #e6dfe3;box-shadow:none}
+.chrono .chgo{color:#5c4a53}
+.chrono.run{box-shadow:none}
+.chrono.on:not(.over){color:#1e7a45;border-color:#cfe6d8}
+.chrono.over{color:#b3261e;border-color:#f0cfcc}
+.chrono.on:not(.over) .chpp{background:#1e7a45}.chrono.over .chpp{background:#b3261e}
+.chrono.on .chx{color:#8a7f85}
