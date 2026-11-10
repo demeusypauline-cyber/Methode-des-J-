@@ -136,18 +136,21 @@
   }
   /* sans limite : aujourd'hui on ne peut pas dépasser les heures restantes jusqu'à demain, arrondies à l'heure supérieure */
   function minutesRestantes() { var n = new Date(), m = (24 * 60) - (n.getHours() * 60 + n.getMinutes()); return Math.max(60, Math.ceil(m / 60) * 60); }
+  /* temps déjà fait aujourd'hui : chaque séance du jour de l'historique, avec sa durée réelle ; anciennes données sans séance : durée de l'exo */
   function dejaFait() {
-    var t = todayISO(), s = 0;
-    data.ex.forEach(function (x) { if (x.evalue === t && visible(x) && !x.ajoute) s += mins(x); });
+    var t = todayISO(), s = 0, vu = {}, byId = {}; data.ex.forEach(function (x) { byId[x.id] = x; });
+    (data.hist || []).forEach(function (h) { var x = byId[h.id]; if (h.jour !== t || !x || !visible(x)) return; vu[h.id] = 1; s += h.m > 0 ? h.m : mins(x); });
+    data.ex.forEach(function (x) { if (x.evalue === t && visible(x) && !x.ajoute && !vu[x.id]) s += mins(x); });
     return s;
   }
   /* retard d'une matière sur l'objectif du jour (même repère que la barre des cartes d'examen) : plus il est grand, plus la matière est prioritaire */
-  var DEFC = null;
+  var DEFC = null, SIMD = null; /* SIMD : jour simulé par la prévision de charge (sinon aujourd'hui) */
   function exDef(x) {
-    DEFC = DEFC || {}; var k = x.semestre + '|' + x.matiere; if (k in DEFC) return DEFC[k];
+    var D = SIMD === null ? TODAY() : SIMD;
+    DEFC = DEFC || {}; var k = x.semestre + '|' + x.matiere + '|' + D; if (k in DEFC) return DEFC[k];
     var E = examNum(x.semestre, x.matiere), v = 0;
     if (E !== null) {
-      var R = data.reglages, J = E - TODAY(), X = Math.max(1, J > R.seuilButoire ? R.butoireSi : R.butoireSinon), need = Math.max(0, Math.min(5, 5 * (1 - Math.max(0, J - X) / Math.max(1, R.debutExam))));
+      var R = data.reglages, J = E - D, X = Math.max(1, J > R.seuilButoire ? R.butoireSi : R.butoireSinon), need = Math.max(0, Math.min(5, 5 * (1 - Math.max(0, J - X) / Math.max(1, R.debutExam))));
       var es = data.ex.filter(function (z) { return z.semestre === x.semestre && z.matiere === x.matiere && z.evalue && !z.ajoute; });
       v = need - (es.length ? mean(es.map(effLvl)) : 0);
     }
@@ -583,7 +586,7 @@
     var t = TODAY(), L = data.ex.filter(function (x) { return visible(x) && x.evalue; });
     var late = 0, due = 0;
     L.forEach(function (x) { var r = revision(x); if (r < t) late++; else if (r < t + 1) due++; });
-    var todo = late + due;
+    var todo = plan().list.filter(function (o) { return o.in; }).length; /* même calcul que « À faire » */
     var matsV = data.mats.filter(function (m) { return (!data.reglages.semestres.length || data.reglages.semestres.indexOf(m.semestre) >= 0) && matOk(m.nom); });
     var fut = matsV.filter(function (m) { return m.examen && dnum(m.examen) >= t; }).sort(function (a, b) { return dnum(a.examen) - dnum(b.examen); });
     var dh = el('div', 'dhead'), hh = el('span', 'hh'); hh.innerHTML = '<svg viewBox="0 0 24 22" width="34" height="31" style="position:absolute;left:0;top:0"><path fill="#f08ab0" d="M12 21.5C5 15.8 1 12.2 1 7.6 1 4.4 3.5 2 6.6 2c2 0 3.9 1 5.4 3C13.5 3 15.4 2 17.4 2 20.5 2 23 4.4 23 7.6c0 4.6-4 8.2-11 13.9z"/></svg><svg viewBox="0 0 24 22" width="22" height="20" style="position:absolute;left:18px;top:16px"><path fill="#ad1457" d="M12 21.5C5 15.8 1 12.2 1 7.6 1 4.4 3.5 2 6.6 2c2 0 3.9 1 5.4 3C13.5 3 15.4 2 17.4 2 20.5 2 23 4.4 23 7.6c0 4.6-4 8.2-11 13.9z"/></svg>';
@@ -597,7 +600,7 @@
     if (fut.length) { var dd = dnum(fut[0].examen) - t; ban.textContent = todo + ' exercice' + (todo > 1 ? 's' : '') + ' à réviser aujourd’hui  ·  Prochain examen : ' + fut[0].nom + ' ' + (dd === 0 ? 'aujourd’hui' : 'dans ' + dd + ' jour' + (dd > 1 ? 's' : '')); }
     /* bandeau retiré */
 
-    var sv = semestres().filter(function (z) { return !data.reglages.semestres.length || data.reglages.semestres.indexOf(z) >= 0; }).map(semAvg).filter(function (v) { return v !== null; });
+    var sv = semestres().filter(function (z) { return !data.reglages.semestres.length || data.reglages.semestres.indexOf(z) >= 0; }).map(semMoy).filter(function (v) { return v !== null; });
     var moy = sv.length ? sv.reduce(function (a, b) { return a + b; }, 0) / sv.length : null;
     var k = el('div', 'kpis3');
     [['EXERCICES', L.length, 'enregistrés'], ['AUJOURD’HUI', todo, ''], ['MOYENNE /20', moy === null ? '–' : fmt1(moy), '']].forEach(function (a, i) {
@@ -782,11 +785,11 @@
       var avg = def && typeof def.moy === 'number' ? def.moy : mean(ns);
       if (avg !== null) res.push({ nom: u, ue: true, notes: ms, avg: avg, sem: sem });
     });
-    if (res.length) return res;
-    var g = {}, order = [];
-    data.mats.forEach(function (m) { if (m.semestre !== sem || typeof m.note !== 'number') return; if (!g[m.nom]) { g[m.nom] = { nom: m.nom, ue: false, notes: [m], avg: m.note, sem: sem }; order.push(m.nom); } });
-    return order.map(function (k) { return g[k]; });
+    var g = {}, order = [], withUE = res.length; /* matières sans UE : comptées chacune comme un groupe (choix de Pauline) */
+    data.mats.forEach(function (m) { if (m.semestre !== sem || typeof m.note !== 'number' || (withUE && m.ue && ueList(sem).indexOf(m.ue) >= 0)) return; if (!g[m.nom]) { g[m.nom] = { nom: m.nom, ue: false, notes: [m], avg: m.note, sem: sem }; order.push(m.nom); } });
+    return res.concat(order.map(function (k) { return g[k]; }));
   }
+  function semMoy(sm) { if (!(data.reglages.matieres || []).length) return semAvg(sm); return mean(data.mats.filter(function (m) { return m.semestre === sm && matOk(m.nom) && typeof m.note === 'number'; }).map(function (m) { return m.note; })); }
   function semAvg(sem) { var l = ueGroups(sem); return l.length ? mean(l.map(function (g) { return g.avg; })) : null; }
   var habitYear = new Date().getFullYear();
   function habitCard() {
@@ -992,11 +995,12 @@
     for (var d = 0; d < N; d++) {
       var wd = new Date((t + d) * DAY).getUTCDay(), bud = data.reglages.planning[(wd + 6) % 7];
       bud = typeof bud === 'number' && !isNaN(bud) ? bud : 1e9; if (extra && bud < 1e9 && bud > 0) bud += extra;
-      var cum = 0, fait = d === 0 ? dejaFait() : 0; if (RET && d > 0) srt();
+      var cum = 0, fait = d === 0 ? dejaFait() : 0; SIMD = t + d;
+      if (d > 0) { cand.forEach(function (o) { o.ex = examAt(o.x, t + d); }); srt(); } /* mode examen et priorité recalculés au jour simulé */
       var effB = bud, effF = fait; if (bud >= 1e9) { effB = d === 0 ? minutesRestantes() : 1440; effF = d === 0 ? 0 : fait; }
       var take = function (o) {
         cum += o.m;
-        done[o.i] = 1; if (!o.v) cnt[d]++;
+        done[o.i] = 1; cnt[d]++;
         if (RET) {
           var ox = o.x, gp = t + d - (o.v ? o.ev : dnum(o.x.evalue));
           if (gp >= 0) {
@@ -1024,6 +1028,7 @@
         }
       }
     }
+    SIMD = null;
     var lastLate = -1; for (var q0 = 0; q0 < N; q0++) if (late[q0] + lateEx[q0] + pvL[q0] + pvLE[q0] > 0) lastLate = q0;
     var res = { lastLate: lastLate, N: N, log: LOG }; if (noDraw) return res;
     var w = 4 + N * 40 + 4, h = 210, dpr = window.devicePixelRatio || 1;
@@ -1066,7 +1071,7 @@
   /* ---------- vue : réglages ---------- */
   function numInput(val, cb, w) {
     var i = document.createElement('input'); i.type = 'number'; i.inputMode = 'numeric'; i.value = val === null || val === undefined || isNaN(val) ? '' : val;
-    if (w) i.style.width = w; i.addEventListener('change', function () { cb(i.value === '' ? null : +i.value); save(); toast('Réglage enregistré.'); }); return i;
+    i.min = 0; if (w) i.style.width = w; i.addEventListener('change', function () { var v = i.value === '' ? null : Math.max(0, Math.round(+i.value)); if (v !== null && isNaN(v)) v = null; if (v !== null) i.value = v; cb(v); save(); toast('Réglage enregistré.'); }); return i;
   }
   var SET_IC = {
     cal: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/>',
@@ -1609,7 +1614,7 @@
   $('examBack').addEventListener('click', function () { $('examDlg').close(); });
   $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
   $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; data.reglages.matieres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 179'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 180'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
   $('syncUrlBtn').addEventListener('click', function () { $('menu').close(); syncNow(true); });

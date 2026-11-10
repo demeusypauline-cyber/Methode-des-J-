@@ -96,6 +96,28 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'OK  ' : 'FAIL') + ' ' + 
     ok(!errs.length, `${w} aucune erreur console ${errs.join(' | ')}`);
     await p.close();
   }
+
+  // v180
+  {
+    const p = await b.newPage({ viewport: { width: 412, height: 860 } }); const errs = []; p.on('pageerror', e => errs.push(e.message));
+    const sd = { mats: [{ semestre: 'S1', nom: 'A', note: 14, ue: 'U' }, { semestre: 'S1', nom: 'B', note: 10 }], ues: [{ semestre: 'S1', nom: 'U' }],
+      ex: [{ id: 'e1', semestre: 'S1', matiere: 'A', intitule: 'X', succes: 1, evalue: iso(-3), minutes: 5 }, { id: 'e2', semestre: 'S1', matiere: 'B', intitule: 'Y', succes: 0, evalue: iso(-3) }], hist: [], reglages: {} };
+    await p.addInitScript(s => { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', 1); localStorage.clear(); localStorage.setItem('mes-exercices-v1', s); sessionStorage.setItem('mes-exercices-sess', '1'); localStorage.setItem('mes-exercices-onglet', 'dash'); } }, JSON.stringify(sd));
+    await p.goto('http://localhost:8765/'); await p.waitForTimeout(400);
+    const kpi = async () => (await p.locator('.kpi3 b').allInnerTexts());
+    let k = await kpi(); ok(k[2] === '12', `v180 D : matière sans UE comptée dans la moyenne (${k[2]})`);
+    await p.click('#tabs button[data-view=today]'); await p.waitForTimeout(200); const nToday = await p.locator('#v-today > .card').count() - 1;
+    await p.click('#tabs button[data-view=dash]'); await p.waitForTimeout(200); k = await kpi(); ok(+k[1] === nToday, `v180 B : KPI Aujourd'hui = liste À faire (${k[1]} / ${nToday})`);
+    await p.click('#tabs button[data-view=exos]'); await p.waitForTimeout(200);
+    for (const m of ['7', '9']) { await p.locator('#exoList .card', { hasText: 'X' }).locator('.abtn.main').click(); await p.fill('#doneMin', m); await p.locator('#doneBtns button').nth(2).click(); await p.waitForTimeout(150); }
+    await p.click('#tabs button[data-view=today]'); await p.waitForTimeout(200);
+    ok((await p.locator('#v-today .card').first().innerText()).includes('déjà fait : 0h16'), 'v180 A : deux séances le même jour comptées (7 + 9 min)');
+    await p.evaluate(() => { const d = JSON.parse(localStorage.getItem('mes-exercices-v1')); d.reglages.matieres = ['b']; localStorage.setItem('mes-exercices-v1', JSON.stringify(d)); localStorage.setItem('mes-exercices-onglet', 'dash'); }); await p.reload(); await p.waitForTimeout(400);
+    k = await kpi(); ok(k[2] === '10', `v180 E : moyenne /20 suit le filtre de matières (${k[2]})`);
+    await p.click('#tabs button[data-view=set]'); await p.locator('#v-set .drow').first().click(); await p.locator('.wday input').first().fill('-30'); await p.locator('.wday input').first().dispatchEvent('change'); await p.waitForTimeout(100);
+    ok((await p.evaluate(() => JSON.parse(localStorage.getItem('mes-exercices-v1')).reglages.planning[0])) === 0, 'v180 : réglage négatif ramené à 0');
+    ok(!errs.length, 'v180 aucune erreur ' + errs.join(' | ')); await p.close();
+  }
   // premier lancement
   const p = await b.newPage({ viewport: { width: 412, height: 860 } }); await p.goto('http://localhost:8765/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(300);
   ok(await p.locator('.welcome').count() === 1, 'premier lancement : carte d’accueil');
