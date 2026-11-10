@@ -313,7 +313,7 @@
     box.appendChild(head);
     var inP = P.list.filter(function (o) { return o.in; }), out = P.list.filter(function (o) { return !o.in && !o.rep; }), reps = P.list.filter(function (o) { return o.rep; });
     if (!data.ex.length && !data.mats.length) box.appendChild(welcomeCard());
-    else if (!inP.length) box.appendChild(el('p', 'muted', data.ex.length ? 'Rien à faire aujourd’hui. Bravo !' : 'Aucun exercice. Ajoute-en avec le bouton + (onglet Exos).'));
+    else if (!inP.length) box.appendChild(el('p', 'muted', !data.ex.length ? 'Aucun exercice. Ajoute-en avec le bouton + (onglet Exos).' : out.length ? 'Ton budget du jour est déjà rempli : ' + out.length + ' exercice' + (out.length > 1 ? 's attendent' : ' attend') + ' dans « Reportés à demain ou après ».' : reps.length ? 'Plus rien aujourd’hui : tu as reporté ' + reps.length + ' exercice' + (reps.length > 1 ? 's' : '') + '.' : 'Rien à faire aujourd’hui. Bravo !'));
     inP.forEach(function (o) { box.appendChild(exoCard(o, true)); });
     if (out.length) {
       var det = keepOpen(document.createElement('details'), 'horsbudget'); det.appendChild(el('summary', '', 'Reportés à demain ou après (' + out.length + ')'));
@@ -730,8 +730,8 @@
     box.classList.toggle('c1', R.dashCols !== 2);
     if (dashEdit && window.innerWidth >= 760) { var sg = el('div', 'seg colseg'); [[1, '1 colonne'], [2, '2 colonnes']].forEach(function (o) { var bb = el('button', (R.dashCols === 2 ? 2 : 1) === o[0] ? 'on' : '', o[1]); bb.type = 'button'; bb.addEventListener('click', function () { R.dashCols = o[0]; save(); renderDash(); }); sg.appendChild(bb); }); dh.appendChild(sg); }
     var half = 0, lastHalf = null;
-    ord.forEach(function (k, i) {
-      var isH = hid.indexOf(k) >= 0; if (isH && !dashEdit) return;
+    function place(k) {
+      var i = ord.indexOf(k), isH = hid.indexOf(k) >= 0; if (isH && !dashEdit) return;
       var c = cards[k];
       if (c.classList.contains('wide')) { if (half % 2 === 1 && lastHalf) lastHalf.classList.add('solo'); half = 0; lastHalf = null; } else { half++; lastHalf = c; }
       if (dashEdit) {
@@ -744,9 +744,21 @@
         c.insertBefore(tb, c.firstChild);
       }
       box.appendChild(c);
-    });
+    }
+    var TOP = ['charge', 'exam'];
+    if (dashEdit) ord.forEach(place);
+    else {
+      ord.filter(function (k) { return TOP.indexOf(k) >= 0; }).forEach(place);
+      if (half % 2 === 1 && lastHalf) lastHalf.classList.add('solo'); half = 0; lastHalf = null;
+      var rest = ord.filter(function (k) { return TOP.indexOf(k) < 0 && hid.indexOf(k) < 0; });
+      if (rest.length) {
+        var opn = !!OPEN.analyse, tg = el('button', 'row plain dana', (opn ? '▾ ' : '▸ ') + 'Analyse détaillée (' + rest.length + ')'); tg.type = 'button'; tg.setAttribute('aria-expanded', opn ? 'true' : 'false');
+        tg.addEventListener('click', function () { OPEN.analyse = !opn; try { localStorage.setItem('mes-exercices-replis', JSON.stringify(OPEN)); } catch (e) { /* ignoré */ } renderDash(); });
+        box.appendChild(tg); if (opn) rest.forEach(place);
+      }
+    }
     if (half % 2 === 1 && lastHalf) lastHalf.classList.add('solo');
-    function drawAll() { Object.keys(draws).forEach(function (k) { if (cards[k].parentNode === box) draws[k](); }); }
+    function drawAll() { Object.keys(draws).forEach(function (k) { if (cards[k].parentNode === box) draws[k](); }); } /* les cartes repliées ne sont pas dessinées */
     var sig = 0; try { var js = JSON.stringify(data.ex); for (var q = 0; q < js.length; q++) sig = (sig * 31 + js.charCodeAt(q)) | 0; } catch (e) { /* ignoré */ }
     var changed = lastSig !== null && sig !== lastSig; lastSig = sig; var tok = ++animTok;
     if (!changed) { ANIM = 1; drawAll(); return; }
@@ -1139,7 +1151,7 @@
     hd.appendChild(bk); hd.appendChild(el('h2', '', SEC.filter(function (o) { return o[0] === setTab; })[0][1])); box.appendChild(hd);
     if (setTab === 'planning') {
     var c2 = setCard('Mode examen', 'flag');
-    [['Début du mode examen : jours avant l’examen', 'debutExam', 'jours'], ['Butoire : seuil — un exo fait plus de … jours avant l’examen est « tôt », sinon « tard »', 'seuilButoire', 'jours'], ['Butoire si fait tôt : ne plus réviser … jours avant l’examen', 'butoireSi', 'jours'], ['Butoire sinon (fait tard) : ne plus réviser … jours avant l’examen (0 ou 1 = jusqu’à la veille de l’examen)', 'butoireSinon', 'jours']].forEach(function (a) {
+    [['Début du mode examen : … j avant l’examen', 'debutExam', 'jours'], ['Seuil tôt / tard : une révision faite plus de … j avant l’examen est « tôt »', 'seuilButoire', 'jours'], ['Dernière révision visée, si faite tôt : … j avant l’examen', 'butoireSi', 'jours'], ['Dernière révision visée, si faite tard : … j avant l’examen (0 ou 1 = la veille)', 'butoireSinon', 'jours']].forEach(function (a) {
       setRow(c2, a[0], R[a[1]], function (v) { R[a[1]] = v === null ? 0 : v; if (a[1] === 'debutExam') examCap(); }, a[2]);
     });
       box.appendChild(c2);
@@ -1630,6 +1642,7 @@
   $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; data.reglages.matieres = []; save(); render(); });
   $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 180'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
+  $('dataBtn').addEventListener('click', function () { $('menu').close(); view = 'set'; setTab = 'donnees'; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } window._top = 1; render(); window.scrollTo(0, 0); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
   $('syncUrlBtn').addEventListener('click', function () { $('menu').close(); syncNow(true); });
   $('exportBtn').addEventListener('click', function () { $('menu').close(); exportFile(); });

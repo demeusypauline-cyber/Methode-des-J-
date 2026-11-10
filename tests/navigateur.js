@@ -145,6 +145,22 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'OK  ' : 'FAIL') + ' ' + 
     const tx = await p.locator('#exoList .card').first().innerText(), want = new Date(Date.now() + c.want * 864e5).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
     ok(tx.includes(want) && tx.startsWith('6'), `${c.nom} (${want})`); await p.close();
   }
+
+  // lot de simplification (tour 27)
+  {
+    const p = await b.newPage({ viewport: { width: 412, height: 860 } });
+    const ex = []; for (let i = 0; i < 4; i++) ex.push({ id: 'h' + i, semestre: 'S', matiere: 'A', intitule: 'H' + i, succes: 1, evalue: iso(-10), minutes: 30 });
+    const sd = { mats: [{ semestre: 'S', nom: 'A' }], ex, hist: [{ id: 'h0', ts: 0, jour: iso(0), avant: { succes: 1, evalue: iso(-12) }, niveau: 1, m: 60 }], reglages: { planning: [60, 60, 60, 60, 60, 60, 60] } };
+    await p.addInitScript(s => { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', 1); localStorage.clear(); localStorage.setItem('mes-exercices-v1', s); sessionStorage.setItem('mes-exercices-sess', '1'); localStorage.setItem('mes-exercices-onglet', 'today'); } }, JSON.stringify(sd));
+    await p.goto('http://localhost:8765/'); await p.waitForTimeout(400);
+    ok((await p.locator('#v-today > p.muted').innerText()).includes('budget du jour est déjà rempli'), 'À faire : budget rempli, pas de « Bravo »');
+    await p.click('#menuBtn'); ok(!(await p.locator('#importSheet').isVisible()) && !(await p.locator('#exportBtn').isVisible()) && await p.locator('#syncBtn').isVisible(), 'menu : synchro seule, plus de doublons');
+    await p.click('#dataBtn'); await p.waitForTimeout(200); ok((await p.locator('#v-set').innerText()).includes('Exporter mes données'), 'menu → Réglages › Données');
+    await p.click('#tabs button[data-view=dash]'); await p.waitForTimeout(300);
+    const nb = await p.locator('#v-dash > .dcard').count(); await p.click('.dana'); await p.waitForTimeout(300);
+    ok(nb === 2 && await p.locator('#v-dash > .dcard').count() > 2, `tableau de bord : 2 cartes en haut, analyse repliable (${nb})`);
+    await p.close();
+  }
   // premier lancement
   const p = await b.newPage({ viewport: { width: 412, height: 860 } }); await p.goto('http://localhost:8765/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(300);
   ok(await p.locator('.welcome').count() === 1, 'premier lancement : carte d’accueil');

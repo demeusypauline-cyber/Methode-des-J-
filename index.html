@@ -54,12 +54,15 @@
   <div class="mhead"><h2>Menu</h2><button id="closeMenu" class="xbtn" type="button" aria-label="Fermer"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
   <div class="syncrow">
     <button id="syncBtn" class="row">Synchroniser avec mon Drive</button>
-    <button id="syncUrlBtn" class="pen" type="button" title="Changer l’adresse de synchronisation" aria-label="Changer l’adresse de synchronisation"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+    <button id="syncUrlBtn" class="pen" hidden type="button" title="Changer l’adresse de synchronisation" aria-label="Changer l’adresse de synchronisation"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
   </div>
+  <button id="dataBtn" class="row">Données et sauvegardes<small style="display:block;font-size:.66rem;opacity:.75">Import, export, restauration, adresse de synchronisation</small></button>
+  <div class="mhide">
   <button id="importSheet" class="row">Importer un fichier<small style="display:block;font-size:.66rem;opacity:.75">Tableur (Excel, CSV) ou sauvegarde (.json)</small></button>
   <input id="sheetInput" type="file" accept=".xlsx,.csv,.json,text/csv,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
   <button id="exportBtn" class="row">Exporter mes données (format .json)</button>
   <button id="versBtn" class="row">Restaurer une ancienne sauvegarde</button>
+  </div>
   <p id="ver" style="text-align:center;font-size:.7rem;color:var(--muted);margin:6px 0 0"></p>
 </dialog>
 

@@ -575,3 +575,7 @@ details.hist .card button{padding:4px 10px;font-size:.8rem}
 /* menu au style des Réglages */
 #menu .row{border:0;border-bottom:1px solid var(--line);border-radius:0;margin:0;padding:12px 4px;font-weight:600}
 .welcome .row{margin:8px 0}
+/* menu : les actions de données vivent dans Réglages › Données (boutons gardés, invisibles, pour y être appelés) */
+#menu .mhide{display:none}
+.dana{text-align:center!important;font-weight:600;margin:4px 0 14px!important}
+#syncUrlBtn[hidden]{display:none!important}
