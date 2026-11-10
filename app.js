@@ -152,7 +152,7 @@
     if (E !== null) {
       var R = data.reglages, J = E - D, X = Math.max(1, J > R.seuilButoire ? R.butoireSi : R.butoireSinon), need = Math.max(0, Math.min(5, 5 * (1 - Math.max(0, J - X) / Math.max(1, R.debutExam))));
       var es = data.ex.filter(function (z) { return z.semestre === x.semestre && z.matiere === x.matiere && z.evalue && !z.ajoute; });
-      v = need - (es.length ? mean(es.map(function (z) { return SIMD !== null && SIML && z.id in SIML ? Math.min(5, SIML[z.id]) : effLvl(z); })) : 0);
+      v = need - (es.length ? mean(es.map(function (z) { if (SIMD === null) return effLvl(z); var s = SIML && SIML[z.id]; return s ? Math.min(5, effAt(s.L, Math.max(0, D - s.r))) : effLvl(z, D); /* retard prévu au jour simulé */ })) : 0);
     }
     return (DEFC[k] = v);
   }
@@ -692,7 +692,7 @@
         var me = el('u', 'me'); me.style.left = Math.min(100, need / 5 * 100) + '%'; me.title = 'Prévision : niveau à avoir aujourd’hui (' + need + ')'; trk.appendChild(me);
         var trw = el('div', 'trw'); trw.appendChild(trk);  mid.appendChild(trw); row.appendChild(mid);
         var jd = el('div', 'exj'); jd.appendChild(el('b', 'jj', 'J-' + J)); jd.appendChild(el('span', 'dd', fromNum(dn).slice(0, 6) + fromNum(dn).slice(8))); row.appendChild(jd);
-        var nt = el('div', 'exn'); if (av !== null) { var fin = 0, LG = simLog(); es.forEach(function (x) { var pr = LG.filter(function (o) { return o.id === x.id && o.d < dn; }); fin += Math.min(5, pr.length ? pr[pr.length - 1].n : effLvl(x)); }); fin /= es.length; nt.appendChild(nivBadge(Math.round(av * 10) / 10, 'sm')); nt.appendChild(el('span', 'parr', '→')); nt.appendChild(nivBadge(Math.round(fin * 10) / 10, 'sm')); } row.appendChild(nt);
+        var nt = el('div', 'exn'); if (av !== null) { var fin = 0, LG = simLog(); es.forEach(function (x) { var pr = LG.filter(function (o) { return o.id === x.id && o.d < dn; }); fin += Math.min(5, pr.length ? pr[pr.length - 1].n : effLvl(x, dn - 1)); /* pas revu : note effective avec le retard prévu à la veille de l'examen */ }); fin /= es.length; nt.appendChild(nivBadge(Math.round(av * 10) / 10, 'sm')); nt.appendChild(el('span', 'parr', '→')); nt.appendChild(nivBadge(Math.round(fin * 10) / 10, 'sm')); } row.appendChild(nt);
         tb.appendChild(row);
       });
       var sc = el('div', 'mscroll'); sc.appendChild(tb); c3.appendChild(sc);
@@ -929,9 +929,10 @@
   }
   function curveAt(sel, d) { var A = curveArr(sel); d = Math.max(A.lo, Math.min(A.hi, Math.round(d))); return A.v[d - A.lo]; }
   /* niveau effectif : le niveau affiché × la baisse lue sur la courbe entre la date prévue et aujourd'hui */
-  function effLvl(x) {
-    var L = lvl(x); if (data.reglages.baisseOff) return L;
-    var late = lateDays(x); if (!late) return L;
+  /* D (facultatif) : jour où l'on évalue le retard (prévision) */
+  function effLvl(x, D) { var L = lvl(x); return effAt(L, D === undefined ? lateDays(x) : Math.max(0, Math.floor(D - revision(x)))); }
+  function effAt(L, late) {
+    if (data.reglages.baisseOff || !late) return L;
     var b = Math.min(5, L), base = L > 5 ? curveAt(6, 0) : curveAt(L, interval(L)), now = L > 5 ? curveAt(6, late) : curveAt(L, interval(L) + late);
     var r = base > 0 ? Math.min(1, now / base) : 1;
     return Math.round((b * r + (L - b)) * 10) / 10;
@@ -1013,9 +1014,9 @@
           var ox = o.x, gp = t + d - (o.v ? o.ev : dnum(o.x.evalue));
           if (gp >= 0) {
             var pl = o.v ? o.L : lvl(o.x), nt = expectNote(pl, gp), nl = nt === null ? pl + 1 : Math.min(5, Math.round(nt)); if (nt !== null && nl >= 5 && pl >= 5) nl = pl + 1;
-            LOG.push({ id: ox.id, d: t + d, n: nl, m: o.m }); SIML[ox.id] = nl; var r2 = Math.max(revisionAt(ox, t + d, interval(nl), t + d), t + d + 1), lb = lastBeforeExam(ox, t + d);
+            LOG.push({ id: ox.id, d: t + d, n: nl, m: o.m }); SIML[ox.id] = { L: nl, r: null }; var r2 = Math.max(revisionAt(ox, t + d, interval(nl), t + d), t + d + 1), lb = lastBeforeExam(ox, t + d);
             if (lb) r2 = Math.max(t + d + interval(nl), examNum(ox.semestre, ox.matiere) + 1); /* dernière révision d'avant examen : la suivante reprend le rythme normal après l'examen */
-            if (r2 < t + N) cand.push({ v: true, x: ox, L: nl, ev: t + d, r: r2, ex: lb ? false : examAt(ox, t + d), i: 'v' + (vc++), m: o.m });
+            SIML[ox.id].r = r2; if (r2 < t + N) cand.push({ v: true, x: ox, L: nl, ev: t + d, r: r2, ex: lb ? false : examAt(ox, t + d), i: 'v' + (vc++), m: o.m });
           }
         }
         if (o.v) { if (o.r < t + d) { if (o.ex) pvLE[d] += o.m; else pvL[d] += o.m; } else if (o.ex) pvE[d] += o.m; else pv[d] += o.m; } else if (o.r < t + d) { if (o.ex) lateEx[d] += o.m; else late[d] += o.m; } else if (o.ex) ex[d] += o.m; else nm[d] += o.m;
