@@ -116,6 +116,10 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'OK  ' : 'FAIL') + ' ' + 
     k = await kpi(); ok(k[2] === '10', `v180 E : moyenne /20 suit le filtre de matières (${k[2]})`);
     await p.click('#tabs button[data-view=set]'); await p.locator('#v-set .drow').first().click(); await p.locator('.wday input').first().fill('-30'); await p.locator('.wday input').first().dispatchEvent('change'); await p.waitForTimeout(100);
     ok((await p.evaluate(() => JSON.parse(localStorage.getItem('mes-exercices-v1')).reglages.planning[0])) === 0, 'v180 : réglage négatif ramené à 0');
+    await p.locator('.wday input').first().fill('2000'); await p.locator('.wday input').first().dispatchEvent('change'); await p.waitForTimeout(100);
+    ok((await p.evaluate(() => JSON.parse(localStorage.getItem('mes-exercices-v1')).reglages.planning[0])) === 1440, 'v180 : budget d’un jour limité à 24 h');
+    await p.locator('.srow input').first().fill('80'); await p.locator('.srow input').first().dispatchEvent('change'); await p.waitForTimeout(150);
+    ok((await p.evaluate(() => JSON.parse(localStorage.getItem('mes-exercices-v1')).reglages.debutExam)) === 50 && (await p.locator('#toast').innerText()).includes('intervalle d’un 5'), 'v180 : mode examen limité à l’intervalle d’un 5, avec explication');
     ok(!errs.length, 'v180 aucune erreur ' + errs.join(' | ')); await p.close();
   }
 

@@ -1094,6 +1094,11 @@
     var b = el('button', 'sw' + (get() ? ' on' : '')); b.type = 'button'; b.setAttribute('role', 'switch'); b.setAttribute('aria-checked', get() ? 'true' : 'false'); b.appendChild(el('i'));
     b.addEventListener('click', function () { set(!get()); save(); renderSet(); }); r.appendChild(b); card.appendChild(r);
   }
+  /* le mode examen ne peut pas commencer plus tôt que l'intervalle d'un 5 */
+  function examCap() {
+    var R = data.reglages, m = R.intervalles[5]; if (typeof m !== 'number' || R.debutExam <= m) return;
+    R.debutExam = m; setTimeout(function () { renderSet(); toast('Mode examen ramené à ' + m + ' j : il ne peut pas commencer plus tôt que l’intervalle d’un 5 (' + m + ' j), sinon un exo maîtrisé serait avancé avant même sa révision normale.'); }, 0);
+  }
   function rulesCard() {
     var R = data.reglages, c = el('div', 'scard rules'), iv = R.intervalles.slice(0, 6).map(function (v, i) { return i + ' → ' + v + ' j'; }).join(' · ');
     function sec(t, lines) { var d = el('div', 'rsec'); d.appendChild(el('h3', '', t)); lines.forEach(function (l) { d.appendChild(el('p', '', l)); }); c.appendChild(d); }
@@ -1126,19 +1131,19 @@
     if (setTab === 'planning') {
     var c2 = setCard('Mode examen', 'flag');
     [['Début du mode examen : jours avant l’examen', 'debutExam', 'jours'], ['Butoire : seuil — un exo fait plus de … jours avant l’examen est « tôt », sinon « tard »', 'seuilButoire', 'jours'], ['Butoire si fait tôt : ne plus réviser … jours avant l’examen', 'butoireSi', 'jours'], ['Butoire sinon (fait tard) : ne plus réviser … jours avant l’examen (0 ou 1 = jusqu’à la veille de l’examen)', 'butoireSinon', 'jours']].forEach(function (a) {
-      setRow(c2, a[0], R[a[1]], function (v) { R[a[1]] = v === null ? 0 : v; }, a[2]);
+      setRow(c2, a[0], R[a[1]], function (v) { R[a[1]] = v === null ? 0 : v; if (a[1] === 'debutExam') examCap(); }, a[2]);
     });
       box.appendChild(c2);
       var c3 = setCard('Planning de la semaine (minutes)', 'clock'), wk = el('div', 'week');
       JOURS.forEach(function (j, i) {
-        var d = el('label', 'wday'); d.appendChild(el('b', '', j)); d.appendChild(numInput(R.planning[i], function (v) { R.planning[i] = v; })); d.appendChild(el('em', '', 'min')); wk.appendChild(d);
+        var d = el('label', 'wday'); d.appendChild(el('b', '', j)); var ni = numInput(R.planning[i], function (v) { if (v !== null && v > 1440) { v = 1440; ni.value = 1440; } R.planning[i] = v; }); ni.max = 1440; d.appendChild(ni); /* au plus 24 h par jour */ d.appendChild(el('em', '', 'min')); wk.appendChild(d);
       });
       c3.appendChild(wk); c3.appendChild(el('p', 'muted', 'Case vide = sans limite ce jour-là.')); box.appendChild(c3);
       var c4 = setCard('Temps par défaut', 'clock'); setRow(c4, 'Durée d’un exercice sans durée indiquée', R.minutesDefaut, function (v) { R.minutesDefaut = v === null || v < 1 ? 5 : v; }, 'min'); box.appendChild(c4);
     } else if (setTab === 'niveaux') {
       var c1 = setCard('Intervalles de révision', 'cal');
       for (var n = 0; n < 6; n++) (function (n) {
-        setRow(c1, NIV[n] + ' : prochaine révision dans', R.intervalles[n], function (v) { R.intervalles[n] = v === null ? 0 : v; }, 'jours', n);
+        setRow(c1, NIV[n] + ' : prochaine révision dans', R.intervalles[n], function (v) { R.intervalles[n] = v === null ? 0 : v; if (n === 5) examCap(); }, 'jours', n);
       })(n);
       setRow(c1, 'Après un 5 : chaque 5 de plus d’affilée (note 6 = 2 fois 5 de suite, note 7 = 3 fois…) repousse la révision de', R.pasApres5, function (v) { R.pasApres5 = v === null ? 0 : v; }, 'jours');
       box.appendChild(c1);
