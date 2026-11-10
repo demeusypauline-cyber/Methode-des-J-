@@ -118,6 +118,16 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'OK  ' : 'FAIL') + ' ' + 
     ok((await p.evaluate(() => JSON.parse(localStorage.getItem('mes-exercices-v1')).reglages.planning[0])) === 0, 'v180 : réglage négatif ramené à 0');
     ok(!errs.length, 'v180 aucune erreur ' + errs.join(' | ')); await p.close();
   }
+
+  // règle de Pauline : niveau 5 en mode examen → révision compressée (ici à E-5), sauf si elle tomberait le jour de l'examen ou après
+  {
+    const p = await b.newPage({ viewport: { width: 412, height: 860 } });
+    const sd = { mats: [{ semestre: 'S1', nom: 'A', examen: iso(30) }], ex: [{ id: 'f1', semestre: 'S1', matiere: 'A', intitule: 'Z', succes: 5, evalue: iso(-10) }], hist: [{ id: 'f1', ts: 0, jour: iso(-10), avant: { succes: 4, evalue: iso(-20) }, niveau: 5, m: 5 }], reglages: {} };
+    await p.addInitScript(s => { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', 1); localStorage.clear(); localStorage.setItem('mes-exercices-v1', s); sessionStorage.setItem('mes-exercices-sess', '1'); localStorage.setItem('mes-exercices-onglet', 'exos'); } }, JSON.stringify(sd));
+    await p.goto('http://localhost:8765/'); await p.waitForTimeout(400);
+    const tx = await p.locator('#exoList .card').first().innerText(), want = new Date(Date.now() + 25 * 864e5).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    ok(tx.includes(want), `niveau 5 en mode examen : revu à J-5 de l'examen (${want})`); await p.close();
+  }
   // premier lancement
   const p = await b.newPage({ viewport: { width: 412, height: 860 } }); await p.goto('http://localhost:8765/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(300);
   ok(await p.locator('.welcome').count() === 1, 'premier lancement : carte d’accueil');
