@@ -17,7 +17,17 @@
 
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt !== undefined) e.textContent = txt; return e; }
-  function toast(m) { var t = $('toast'); t.textContent = m; t.className = 'on'; clearTimeout(toast.t); toast.t = setTimeout(function () { t.className = ''; }, 2800); }
+  function toast(m, undo) {
+    var t = $('toast'); t.textContent = m;
+    if (undo) { var b = el('button', 'tundo', 'Annuler'); b.type = 'button'; b.addEventListener('click', function () { t.className = ''; undo(); }); t.appendChild(b); }
+    t.className = 'on' + (undo ? ' act' : ''); clearTimeout(toast.t); toast.t = setTimeout(function () { t.className = ''; }, undo ? 6000 : 2800);
+  }
+  /* fenêtre maison à la place de prompt/confirm : o = { t: titre, p: texte, v: valeur (champ affiché si défini), ok, danger } */
+  function ask(o, cb) {
+    var i = $('askI'); $('askT').textContent = o.t || ''; $('askP').textContent = o.p || ''; $('askP').hidden = !o.p;
+    i.hidden = o.v === undefined; i.value = o.v || ''; i.placeholder = o.ph || ''; $('askOk').textContent = o.ok || 'OK'; $('askOk').className = o.danger ? 'danger' : 'primary';
+    ask.cb = cb; $('askDlg').showModal(); if (!i.hidden) setTimeout(function () { i.focus(); i.select(); }, 50);
+  }
   var IC = {
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     cal: '<rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/>',
@@ -48,18 +58,21 @@
     (function () { var cnt = {}; d.hist.sort(function (a, b) { return a.ts - b.ts; }).forEach(function (h) { if (!h.jour) return; var k = h.id + '|' + h.jour, n = cnt[k] || 0; cnt[k] = n + 1; h.ts = dnum(h.jour) * DAY + n; }); d.ex.forEach(function (x) { if (x.cree) x.cree = Math.floor(x.cree / DAY) * DAY; }); })();
     (function () { var by = {}; d.hist.sort(function (a, b) { return a.ts - b.ts; }).forEach(function (h) { (by[h.id] = by[h.id] || []).push(h); });
       Object.keys(by).forEach(function (id) { var run = 0; by[id].forEach(function (h) { if (h.avant && (h.avant.succes || 0) >= 5) h.avant.succes = run <= 1 ? 5 : 4 + run; run = h.niveau >= 5 ? run + 1 : 0; }); }); })();
-    return { ex: Array.isArray(d.ex) ? d.ex : [], mats: Array.isArray(d.mats) ? d.mats : [], hist: Array.isArray(d.hist) ? d.hist : [], jours: d.jours && typeof d.jours === 'object' ? d.jours : {}, ues: Array.isArray(d.ues) ? d.ues : [], corbeille: Array.isArray(d.corbeille) ? d.corbeille : [], chronos: d.chronos && typeof d.chronos === 'object' ? d.chronos : {}, reglages: r };
+    return { ex: Array.isArray(d.ex) ? d.ex : [], mats: Array.isArray(d.mats) ? d.mats : [], hist: Array.isArray(d.hist) ? d.hist : [], jours: d.jours && typeof d.jours === 'object' ? d.jours : {}, ues: Array.isArray(d.ues) ? d.ues : [], corbeille: Array.isArray(d.corbeille) ? d.corbeille : [], chronos: d.chronos && typeof d.chronos === 'object' ? d.chronos : {}, renoms: Array.isArray(d.renoms) ? d.renoms : [], matsSuppr: Array.isArray(d.matsSuppr) ? d.matsSuppr : [], reglages: r };
   }
   function load() { try { var raw = localStorage.getItem(KEY); if (raw) data = fix(JSON.parse(raw)); } catch (e) { /* départ à vide */ } }
   function save() {
-    try { localStorage.setItem(KEY, JSON.stringify(data)); localStorage.setItem(KEY + '-modif', String(Date.now())); syncSoon(); return true; }
+    resetCaches(); try { localStorage.setItem(KEY, JSON.stringify(data)); localStorage.setItem(KEY + '-modif', String(Date.now())); syncSoon(); return true; }
     catch (e) { toast('Impossible d’enregistrer (stockage plein ou bloqué).'); return false; }
   }
 
   /* ---------- tes règles de révision (reprises de ton Excel) ---------- */
+  /* caches remis à zéro à chaque enregistrement et à chaque affichage */
+  var EXC = null, LVC = null;
+  function resetCaches() { EXC = null; LVC = null; DEFC = null; }
   function examNum(sem, mat) {
-    for (var i = 0; i < data.mats.length; i++) { var m = data.mats[i]; if (m.semestre === sem && m.nom === mat) return m.examen ? dnum(m.examen) : null; }
-    return null;
+    if (!EXC) { EXC = {}; data.mats.forEach(function (m) { var k = m.semestre + '|' + m.nom; if (!(k in EXC)) EXC[k] = m.examen ? dnum(m.examen) : null; }); }
+    var k = sem + '|' + mat; return k in EXC ? EXC[k] : null;
   }
   /* niveau réel : 5 = maîtrise ; 6, 7… = plusieurs 5 d'affilée, déduits de l'historique */
   function runOf(id, hs) {
@@ -69,6 +82,10 @@
   }
   function lvl(x) {
     var s = x.succes || 0; if (s < 5) return s;
+    LVC = LVC || {}; var ck = x.id + '|' + s + '|' + (x.p5 || 0) + '|' + (data.hist || []).length; if (ck in LVC) return LVC[ck];
+    return (LVC[ck] = lvlRaw(x, s));
+  }
+  function lvlRaw(x, s) {
     var r = runOf(x.id, data.hist), P = r.all ? (x.p5 || 0) : 0;
     if (!r.run && !P) return 5;
     return Math.min(11, 4 + Math.max(1, P + r.run));
@@ -79,10 +96,11 @@
     var v = R.intervalles[n]; return typeof v === 'number' ? v : 0;
   }
   function nivName(n) { return n <= 5 ? (NIV[n] || '') : 'Maîtrise totale · ' + (n - 4) + ' fois de suite'; }
-  function revisionAt(x, I, iv) { return Math.floor(revisionRaw(x, I, iv) + 1e-9); } /* toujours un jour entier, arrondi à l'inférieur */
-  function revisionRaw(x, I, iv) {
+  function revisionAt(x, I, iv, asOf) { return Math.floor(revisionRaw(x, I, iv, asOf) + 1e-9); } /* toujours un jour entier, arrondi à l'inférieur */
+  /* asOf : jour où l'on regarde ; une fois l'examen passé, l'exo revient aux intervalles normaux */
+  function revisionRaw(x, I, iv, asOf) {
     var R = data.reglages, E = examNum(x.semestre, x.matiere);
-    if (E !== null) {
+    if (E !== null && !(asOf !== undefined && E < asOf)) {
       var dE = E - I;
       if (dE >= 0 && dE <= R.debutExam) {
         if (iv >= interval(5) && I + iv > E) return I + iv; /* niveau 5 ou plus : sa révision normale tombe après l'examen, donc hors mode examen */
@@ -93,7 +111,16 @@
     }
     return I + iv;
   }
-  function revision(x) { if (x.ajoute) return TODAY(); return revisionAt(x, dnum(x.evalue), interval(lvl(x))); }
+  /* jamais le jour même : au plus tôt le lendemain de la dernière révision */
+  function revision(x) { if (x.ajoute) return TODAY(); var I = dnum(x.evalue); return Math.max(revisionAt(x, I, interval(lvl(x)), TODAY()), I + 1); }
+  /* niveau réel qu'aurait l'exo s'il recevait la note n aujourd'hui (même calcul que lvl, sur un historique simulé) */
+  function lvlIf(x, n) {
+    var h = data.hist = data.hist || [], s = x.succes, p = x.p5, a = x.ajoute; h.push({ id: x.id, ts: 1e18, niveau: n }); x.succes = n; if (n < 5) x.p5 = 0; delete x.ajoute;
+    var r; try { r = lvl(x); } finally { h.pop(); x.succes = s; x.p5 = p; if (a) x.ajoute = a; LVC = null; }
+    return r;
+  }
+  /* date de la prochaine révision si l'exo recevait la note n aujourd'hui */
+  function revisionIf(x, n) { var t = TODAY(); return Math.max(revisionAt(x, t, interval(lvlIf(x, n)), t), t + 1); }
   function prio(x) { return x.ajoute ? 3 : lvl(x); }
   function examAt(x, D) { var E = examNum(x.semestre, x.matiere); if (E === null) return false; var d = E - D; return d >= 0 && d <= data.reglages.debutExam; }
   function modeExam(x) {
@@ -138,6 +165,7 @@
     var t = TODAY(), list = [];
     data.ex.forEach(function (x, i) {
       if (!visible(x) || !x.evalue) return;
+      if (examNum(x.semestre, x.matiere) === t) return; /* jour de l'examen : rien à réviser dans cette matière */
       var r = revision(x);
       if (r < t + 1) list.push({ x: x, r: r, ex: modeExam(x), i: i });
     });
@@ -186,7 +214,7 @@
     if (view !== 'dash') Array.prototype.slice.call(document.querySelectorAll('.hbtns .editbtn, header .hh')).forEach(function (n) { n.remove(); });
     var box = $('filtBox'); box.textContent = ''; var fb = $('filtBtn'), all = semestres();
     if (view === 'set') { fb.hidden = true; return; }
-    var hasMat = matChoices().length > 1; fb.hidden = (view === 'set' || (all.length < 2 && !hasMat)); fb.querySelector('.fdot').hidden = !(data.reglages.semestres.length || (data.reglages.matieres || []).length);
+    var hasMat = matChoices().length > 1; fb.hidden = (view === 'set' || (all.length < 2 && !hasMat)); fb.querySelector('.fdot').hidden = !(data.reglages.semestres.length || (data.reglages.matieres || []).length); fb.classList.toggle('on', !fb.querySelector('.fdot').hidden);
     var mbox = $('filtMat'); mbox.textContent = ''; $('filtMatT').hidden = !hasMat;
     if (hasMat) matChoices().forEach(function (m) {
       var b = el('button', 'chip', m.nom); b.type = 'button'; b.setAttribute('aria-pressed', (data.reglages.matieres || []).indexOf(m.k) >= 0 ? 'true' : 'false');
@@ -235,7 +263,8 @@
     var pb = el('button', 'chpp'); pb.type = 'button'; pb.title = c.start ? 'Pause' : 'Reprendre'; pb.appendChild(chSvg(c.start ? 'pause' : 'play', 12));
     pb.addEventListener('click', function (e) { e.stopPropagation(); var a = chGetAll(), k = a[id]; if (!k) return; if (k.start) { k.acc = chMs(k); k.start = null; } else k.start = Date.now(); chSetAll(a); redo(); });
     var xb = el('button', 'chx'); xb.type = 'button'; xb.title = 'Remettre à zéro'; xb.appendChild(chSvg('x', 10));
-    xb.addEventListener('click', function (e) { e.stopPropagation(); var a = chGetAll(); delete a[id]; chSetAll(a); redo(); });
+    xb.addEventListener('click', function (e) { e.stopPropagation(); var a = chGetAll(), c0 = a[id]; delete a[id]; chSetAll(a); redo();
+      toast('Minuteur remis à zéro.', function () { var b = chGetAll(); if (b[id]) return; b[id] = c0; chSetAll(b); render(); }); });
     box.appendChild(pb); box.appendChild(xb); return box;
   }
   setInterval(function () { var all = chGetAll(); document.querySelectorAll('.chtime').forEach(function (n) { var c = all[n.dataset.chid]; if (c && c.start) { var sh = chShow(n.dataset.chid, chMs(c)); n.textContent = sh.t; if (n.parentNode) n.parentNode.classList.toggle('over', sh.over); } }); }, 1000);
@@ -243,7 +272,7 @@
   function exoCard(o, withBtn) {
     var x = o.x, c = el('div', 'card' + (o.ex ? ' exam' : ''));
     var top = el('div', 'row2');
-    var lx = lvl(x), ef = x.ajoute ? lx : effLvl(x), nb = el('div', 'niv', x.ajoute ? 'A' : fmt1(ef)); nb.style.background = scale(ef); nb.style.color = ef < 3.2 ? '#fff' : '#5c1530'; nb.title = x.ajoute ? 'Ajouté : pas encore de note' : 'Note effective (avec le retard) · ' + nivName(lx);
+    var lx = lvl(x), ef = x.ajoute ? lx : effLvl(x), nb = el('div', 'niv', x.ajoute ? 'A' : fmt1(ef)); nb.style.background = scale(ef); nb.style.color = ef < 3 ? '#fff' : '#5c1530'; nb.title = x.ajoute ? 'Ajouté : pas encore de note' : 'Note effective (avec le retard) · ' + nivName(lx);
     var l = el('div'); l.style.flex = '1'; l.appendChild(el('b', '', x.matiere + (x.intitule ? ' · ' + x.intitule : '')));
     l.appendChild(el('div', 'muted', x.semestre + ' · fait le ' + fromNum(dnum(x.evalue))));
     if (x.ajoute) { nb.style.background = '#cfcfd6'; nb.style.color = '#4a3a42'; }
@@ -251,7 +280,7 @@
     c.appendChild(top);
     var p = el('div'); p.style.marginTop = '6px';
     var late = Math.floor(TODAY() - o.r);
-    if (!x.ajoute) { var sq = el('span', 'nsq', String(lx)); sq.style.background = scale(lx); sq.style.color = lx < 3.2 ? '#fff' : '#5c1530'; sq.title = 'Note inscrite'; p.appendChild(sq); }
+    if (!x.ajoute) { var sq = el('span', 'nsq', String(lx)); sq.style.background = scale(lx); sq.style.color = lx < 3 ? '#fff' : '#5c1530'; sq.title = 'Note inscrite'; p.appendChild(sq); }
     if (late > 0) p.appendChild(el('span', 'pill late', 'retard ' + late + ' j'));
     else p.appendChild(pillI('cal', 'à revoir ' + fromNum(o.r)));
     if (o.ex) p.appendChild(pillI('flag', 'J-' + (examNum(x.semestre, x.matiere) - TODAY())));
@@ -259,7 +288,8 @@
     if (withBtn) {
       var acts = el('div', 'acts');
       var rb = el('button', 'abtn soft'); rb.type = 'button'; rb.className = 'abtn soft ico'; rb.title = o.rep ? 'Remettre' : 'Reporter'; rb.setAttribute('aria-label', rb.title); rb.appendChild(chSvg(o.rep ? 'back' : 'skip', 17));
-      rb.addEventListener('click', function () { if (o.rep) { delete x.reporte; toast('Remis dans ta liste.'); } else { x.reporte = todayISO(); toast('Reporté : ton temps va aux autres exos.'); } save(); render(); });
+      rb.addEventListener('click', function () { var r0 = x.reporte, r1; if (o.rep) delete x.reporte; else x.reporte = todayISO(); r1 = x.reporte; save(); render();
+        toast(o.rep ? 'Remis dans ta liste.' : 'Reporté : ton temps va aux autres exos.', function () { if (x.reporte !== r1) return; if (r0) x.reporte = r0; else delete x.reporte; save(); render(); }); });
       var b = el('button', 'abtn main'); b.type = 'button'; b.appendChild(chSvg('check', 18)); b.title = 'Refait'; b.setAttribute('aria-label', 'Refait'); b.addEventListener('click', function () { openDone(x.id); });
       if (withBtn !== 'lite') acts.appendChild(rb); acts.appendChild(b); acts.appendChild(chronoEl(x.id)); c.appendChild(acts);
     }
@@ -279,15 +309,16 @@
     var bar = el('div', 'bar'), fill = el('i'); fill.style.width = (P.budget >= 1e9 ? 0 : Math.min(100, Math.round(P.fait / P.budget * 100))) + '%'; bar.appendChild(fill); head.appendChild(bar);
     box.appendChild(head);
     var inP = P.list.filter(function (o) { return o.in; }), out = P.list.filter(function (o) { return !o.in && !o.rep; }), reps = P.list.filter(function (o) { return o.rep; });
-    if (!inP.length) box.appendChild(el('p', 'muted', data.ex.length ? 'Rien à faire aujourd’hui. Bravo !' : 'Aucun exercice. Ajoute-en avec le bouton + (onglet Exos) ou restaure ta sauvegarde (menu ⋮).'));
+    if (!data.ex.length && !data.mats.length) box.appendChild(welcomeCard());
+    else if (!inP.length) box.appendChild(el('p', 'muted', data.ex.length ? 'Rien à faire aujourd’hui. Bravo !' : 'Aucun exercice. Ajoute-en avec le bouton + (onglet Exos).'));
     inP.forEach(function (o) { box.appendChild(exoCard(o, true)); });
     if (out.length) {
-      var det = document.createElement('details'); det.appendChild(el('summary', '', 'Reportés à demain ou après (' + out.length + ')'));
+      var det = keepOpen(document.createElement('details'), 'horsbudget'); det.appendChild(el('summary', '', 'Reportés à demain ou après (' + out.length + ')'));
       out.slice(0, 60).forEach(function (o) { det.appendChild(exoCard(o, true)); });
       box.appendChild(det);
     }
     if (reps.length) {
-      var dr = document.createElement('details'); dr.appendChild(el('summary', '', 'Reportés par toi aujourd’hui (' + reps.length + ')'));
+      var dr = keepOpen(document.createElement('details'), 'reportes'); dr.appendChild(el('summary', '', 'Reportés par toi aujourd’hui (' + reps.length + ')'));
       reps.forEach(function (o) { dr.appendChild(exoCard(o, true)); }); box.appendChild(dr);
     }
     box.appendChild(histBlock());
@@ -297,14 +328,29 @@
   /* ---------- historique de la semaine ---------- */
   function addHist(x, niv) {
     data.hist = data.hist || [];
+    var prev = {}; PREVK.forEach(function (k) { if (k in x) prev[k] = x[k]; });
     var mi = $('doneMin') && parseFloat($('doneMin').value); if (mi > 0 && mi < 1000) x.minutes = Math.round(mi);
     var nSame = data.hist.filter(function (h) { return h.id === x.id && h.jour === todayISO(); }).length;
-    data.hist.push({ id: x.id, ts: dnum(todayISO()) * DAY + nSame, jour: todayISO(), avant: { succes: x.ajoute ? 0 : lvl(x), evalue: x.ajoute ? '' : (x.evalue || '') }, niveau: niv, m: mins(x) }); delete x.ajoute;
+    var h = { id: x.id, ts: dnum(todayISO()) * DAY + nSame, jour: todayISO(), avant: { succes: x.ajoute ? 0 : lvl(x), evalue: x.ajoute ? '' : (x.evalue || '') }, niveau: niv, m: mins(x), prev: prev };
+    data.hist.push(h); delete x.ajoute; return h;
+  }
+  /* annulation possible seulement sur la dernière ligne d'un exo, jamais sur une ligne figée (import), et si l'exo n'a pas changé depuis */
+  var PREVK = ['succes', 'p5', 'evalue', 'minutes', 'ajoute', 'reporte'];
+  function canUndo(h) {
+    if (!h || h.fige) return false; var x = data.ex.filter(function (e) { return e.id === h.id; })[0]; if (!x) return false;
+    var last = (data.hist || []).filter(function (z) { return z.id === h.id; }).sort(function (a, b) { return a.ts - b.ts; }).pop();
+    return last === h && x.evalue === h.jour && (x.succes || 0) === Math.min(5, h.niveau) && !x.ajoute;
+  }
+  function undoHist(h) {
+    var x = data.ex.filter(function (e) { return e.id === h.id; })[0], p = h.prev;
+    if (p) PREVK.forEach(function (k) { if (k in p) x[k] = p[k]; else delete x[k]; });
+    else { x.succes = Math.min(5, h.avant.succes); if (h.avant.evalue) x.evalue = h.avant.evalue; else x.ajoute = true; } /* ancienne ligne sans état complet : on garde la date */
+    data.hist = data.hist.filter(function (z) { return z !== h; });
   }
   function histBlock() {
     var lim = Date.now() - 7 * DAY; data.corbeille = (data.corbeille || []).filter(function (c) { return c && c.ex && c.ts > lim; });
     var L = (data.hist || []).filter(function (h) { return h.ts > lim; }).map(function (h) { return { ts: h.ts, h: h }; }).concat(data.corbeille.map(function (c) { return { ts: c.ts, c: c }; })).sort(function (a, b) { return b.ts - a.ts; });
-    var det = document.createElement('details'); det.appendChild(el('summary', '', 'Historique de la semaine (' + L.length + ')'));
+    var det = keepOpen(document.createElement('details'), 'historique'); det.className = 'hist'; det.appendChild(el('summary', '', 'Historique de la semaine (' + L.length + ')'));
     if (!L.length) { det.appendChild(el('p', 'muted', 'Rien de fait cette semaine.')); return det; }
     L.forEach(function (it) {
       var c = el('div', 'card'), top = el('div', 'row2'), l = el('div'), row = el('div'); row.style.marginTop = '8px';
@@ -320,9 +366,9 @@
         var h = it.h, x = data.ex.filter(function (e) { return e.id === h.id; })[0]; if (!x) return;
         l.appendChild(el('b', '', x.matiere + (x.intitule ? ' · ' + x.intitule : '')));
         l.appendChild(el('div', 'muted', jour + ' · niveau ' + h.avant.succes + ' → ' + h.niveau));
-        var un = el('button', 'plain', 'Annuler'); un.type = 'button';
-        un.addEventListener('click', function () { x.succes = Math.min(5, h.avant.succes); x.evalue = h.avant.evalue; data.hist = data.hist.filter(function (z) { return z !== h; }); save(); render(); toast('Remis comme avant.'); });
-        row.appendChild(un);
+        if (canUndo(h)) { var un = el('button', 'plain', 'Annuler'); un.type = 'button';
+          un.addEventListener('click', function () { if (!canUndo(h)) return; undoHist(h); save(); render(); toast('Remis comme avant.'); });
+          row.appendChild(un); }
       }
       top.appendChild(l); c.appendChild(top); c.appendChild(row); det.appendChild(c);
     });
@@ -344,141 +390,163 @@
   }
 
 
+  /* applique un renommage à toutes les données (exos, corbeille, matières, UE) ; aussi utilisé à la fusion avec le Drive */
+  function applyRen(D, r) {
+    var exs = (D.ex || []).concat((D.corbeille || []).map(function (c) { return c.ex; }));
+    if (r.k === 'sem') {
+      (D.mats || []).forEach(function (m) { if (m.semestre === r.de) m.semestre = r.a; }); exs.forEach(function (x) { if (x.semestre === r.de) x.semestre = r.a; });
+      (D.ues || []).forEach(function (u) { if (u.semestre === r.de) u.semestre = r.a; });
+      if (D.reglages) ['semestres', 'semOrdre'].forEach(function (k) { if (Array.isArray(D.reglages[k])) D.reglages[k] = D.reglages[k].map(function (z) { return z === r.de ? r.a : z; }).filter(function (z, i, a) { return a.indexOf(z) === i; }); });
+    } else {
+      (D.mats || []).forEach(function (m) { if (m.semestre === r.s && m.nom === r.de) m.nom = r.a; }); exs.forEach(function (x) { if (x.semestre === r.s && x.matiere === r.de) x.matiere = r.a; });
+    }
+  }
+  function doRen(r) { applyRen(data, r); data.renoms = data.renoms || []; r.t = Date.now(); data.renoms.push(r); }
   function renameSem(old) {
-    var n = window.prompt('Nouveau nom du semestre « ' + old + ' » :', old); if (n === null) return; n = n.trim();
-    if (!n || n === old) return;
-    if (semestres().indexOf(n) >= 0 && !window.confirm('« ' + n + ' » existe déjà : les deux semestres vont être regroupés. Continuer ?')) return;
-    data.mats.forEach(function (m) { if (m.semestre === old) m.semestre = n; });
-    data.ex.forEach(function (x) { if (x.semestre === old) x.semestre = n; });
-    data.reglages.semestres = data.reglages.semestres.map(function (z) { return z === old ? n : z; });
-    save(); render(); toast('Semestre renommé.');
+    ask({ t: 'Renommer le semestre', v: old, ok: 'Renommer' }, function (n) {
+      n = n.trim(); if (!n || n === old) return;
+      function go() { doRen({ k: 'sem', de: old, a: n }); save(); render(); toast('Semestre renommé.'); }
+      if (semestres().indexOf(n) >= 0) ask({ t: '« ' + n + ' » existe déjà', p: 'Les deux semestres vont être regroupés.', ok: 'Regrouper' }, go); else go();
+    });
   }
+  function matTaken(sem, n, self) { return data.mats.some(function (z) { return z !== self && z.semestre === sem && norm(z.nom).trim() === norm(n).trim(); }); }
   function renameMat(m) {
-    var n = window.prompt('Nouveau nom de la matière « ' + m.nom + ' » :', m.nom); if (n === null) return; n = n.trim();
-    if (!n || n === m.nom) return;
-    var old = m.nom;
-    data.ex.forEach(function (x) { if (x.semestre === m.semestre && x.matiere === old) x.matiere = n; });
-    m.nom = n; save(); render(); toast('Matière renommée.');
+    ask({ t: 'Renommer la matière', v: m.nom, ok: 'Renommer' }, function (n) {
+      n = n.trim(); if (!n || n === m.nom) return;
+      if (matTaken(m.semestre, n, m)) { toast('« ' + n + ' » existe déjà dans ' + m.semestre + '.'); return; }
+      var ok = norm(m.nom).trim(), f = data.reglages.matieres || []; if (f.indexOf(ok) >= 0 && f.indexOf(norm(n).trim()) < 0) f.push(norm(n).trim());
+      if (examSel && examSel.semestre === m.semestre && examSel.nom === m.nom) examSel.nom = n;
+      doRen({ k: 'mat', s: m.semestre, de: m.nom, a: n }); save(); render(); toast('Matière renommée.');
+    });
   }
+  /* suppression seulement si aucun exercice (actif ou en corbeille) ; le semestre disparaît avec sa dernière matière */
+  function deleteMat(m) {
+    var n = data.ex.concat((data.corbeille || []).map(function (c) { return c.ex; })).filter(function (x) { return x.semestre === m.semestre && x.matiere === m.nom; }).length;
+    if (n) { toast('Impossible : ' + n + ' exercice' + (n > 1 ? 's sont rattachés' : ' est rattaché') + ' à « ' + m.nom + ' » (corbeille comprise).'); return; }
+    var lost = []; if (m.examen) lost.push('examen le ' + fromNum(dnum(m.examen))); if (typeof m.note === 'number') lost.push('note ' + m.note + '/20'); if (m.ue) lost.push('UE « ' + m.ue + ' »');
+    ask({ t: 'Supprimer « ' + m.nom + ' » ?', p: lost.length ? 'Seront perdus : ' + lost.join(', ') + '.' : 'Aucun exercice ni examen.', ok: 'Supprimer', danger: true }, function () {
+      data.mats = data.mats.filter(function (z) { return z !== m; }); data.matsSuppr = data.matsSuppr || []; data.matsSuppr.push({ k: m.semestre + '|' + m.nom, t: Date.now() });
+      if (semestres().indexOf(m.semestre) < 0) ['semestres', 'semOrdre'].forEach(function (k) { data.reglages[k] = (data.reglages[k] || []).filter(function (z) { return z !== m.semestre; }); });
+      save(); render(); toast('Matière supprimée.');
+    });
+  }
+  function addMat(s, n) { data.mats.push({ semestre: s, nom: n, examen: null, cree: Date.now() }); }
 
   /* ---------- vue : examens ---------- */
+  /* replis qui restent ouverts ou fermés d'une fois sur l'autre */
+  var OPEN = (function () { try { return JSON.parse(localStorage.getItem('mes-exercices-replis') || '{}') || {}; } catch (e) { return {}; } })();
+  function keepOpen(det, k, def) {
+    det.open = k in OPEN ? !!OPEN[k] : !!def;
+    det.addEventListener('toggle', function () { OPEN[k] = det.open; try { localStorage.setItem('mes-exercices-replis', JSON.stringify(OPEN)); } catch (e) { /* ignoré */ } });
+    return det;
+  }
+  function newSem() {
+    ask({ t: 'Nouveau semestre', v: '', ph: 'ex. S8 - 2A', ok: 'Suivant' }, function (n) {
+      n = n.trim(); if (!n) return;
+      ask({ t: 'Première matière de ' + n, v: '', ok: 'Créer' }, function (m) { m = m.trim(); if (!m) return; if (matTaken(n, m)) { toast('« ' + m + ' » existe déjà.'); return; } addMat(n, m); save(); view = 'mats'; render(); });
+    });
+  }
+  function plainBtn(txt, fn, cls) { var b = el('button', cls || 'plain', txt); b.type = 'button'; b.addEventListener('click', fn); return b; }
   function renderMats() {
     var box = $('v-mats'); box.textContent = '';
-    var od = el('div', 'chips'); od.style.padding = '0 0 10px'; od.appendChild(el('span', 'muted', 'Ordre des semestres :'));
-    [['alpha', 'A → Z'], ['manuel', 'Manuel (↑ ↓)']].forEach(function (a) {
-      var b = el('button', 'chip', a[1]); b.type = 'button'; b.setAttribute('aria-pressed', data.reglages.ordreSem === a[0] ? 'true' : 'false');
-      b.addEventListener('click', function () { if (a[0] === 'manuel' && !(data.reglages.semOrdre || []).length) data.reglages.semOrdre = semestres(); data.reglages.ordreSem = a[0]; save(); render(); });
-      od.appendChild(b);
-    });
-    box.appendChild(od);
-    if (data.reglages.ordreSem !== 'alpha' && semestres().length > 1) {
-      var ol = el('div', 'dlist');
-      var rows = el('div', 'drows'); ol.appendChild(rows);
-      semestres().forEach(function (sm) {
-        var r = el('div', 'drow'); r.dataset.sem = sm; var h = el('span', 'dh', '⠿'); r.appendChild(h); r.appendChild(el('span', 'dn', sm));
-        h.addEventListener('pointerdown', function (e) {
-          e.preventDefault(); r.classList.add('drag');
-          function mv(ev) {
-            var kids = Array.prototype.slice.call(rows.children);
-            for (var i = 0; i < kids.length; i++) {
-              var k = kids[i]; if (k === r) continue; var b = k.getBoundingClientRect();
-              if (ev.clientY > b.top && ev.clientY < b.bottom) { var ri = kids.indexOf(r); if (ri < i) rows.insertBefore(r, k.nextSibling); else rows.insertBefore(r, k); break; }
-            }
-          }
-          function up() {
-            window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); r.classList.remove('drag');
-            data.reglages.semOrdre = Array.prototype.map.call(rows.children, function (k) { return k.dataset.sem; }); data.reglages.ordreSem = 'manuel'; save(); render();
-          }
-          window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
-        });
-        rows.appendChild(r);
+    if (semestres().length > 1) {
+      var od = keepOpen(document.createElement('details'), 'ordre', false); od.className = 'mord'; od.appendChild(el('summary', '', 'Ordre des semestres'));
+      var ch = el('div', 'chips');
+      [['alpha', 'A → Z'], ['manuel', 'Manuel']].forEach(function (a) {
+        var b = el('button', 'chip', a[1]); b.type = 'button'; b.setAttribute('aria-pressed', data.reglages.ordreSem === a[0] ? 'true' : 'false');
+        b.addEventListener('click', function () { if (a[0] === 'manuel' && !(data.reglages.semOrdre || []).length) data.reglages.semOrdre = semestres(); data.reglages.ordreSem = a[0]; save(); render(); });
+        ch.appendChild(b);
       });
-      box.appendChild(ol);
+      od.appendChild(ch);
+      if (data.reglages.ordreSem !== 'alpha') {
+        var rows = el('div', 'drows');
+        semestres().forEach(function (sm) {
+          var r = el('div', 'drow'); r.dataset.sem = sm; var h = el('span', 'dh', '⠿'); r.appendChild(h); r.appendChild(el('span', 'dn', sm));
+          h.addEventListener('pointerdown', function (e) {
+            e.preventDefault(); r.classList.add('drag');
+            function mv(ev) {
+              var kids = Array.prototype.slice.call(rows.children);
+              for (var i = 0; i < kids.length; i++) { var k = kids[i]; if (k === r) continue; var bb = k.getBoundingClientRect(); if (ev.clientY > bb.top && ev.clientY < bb.bottom) { if (kids.indexOf(r) < i) rows.insertBefore(r, k.nextSibling); else rows.insertBefore(r, k); break; } }
+            }
+            function up() {
+              window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); r.classList.remove('drag');
+              data.reglages.semOrdre = Array.prototype.map.call(rows.children, function (k) { return k.dataset.sem; }); data.reglages.ordreSem = 'manuel'; save(); render();
+            }
+            window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+          });
+          rows.appendChild(r);
+        });
+        var dl = el('div', 'dlist'); dl.appendChild(rows); od.appendChild(dl);
+      }
+      box.appendChild(od);
     }
+    if (!data.mats.length) box.appendChild(welcomeCard());
     semestres().forEach(function (s) {
-      var det = document.createElement('details'); det.appendChild(el('summary', '', s));
-      var tb = document.createElement('table'); tb.className = 'tbl';
-      var hd = document.createElement('tr'); ['Matière', 'Examen', 'Note /20'].forEach(function (h) { hd.appendChild(el('th', '', h)); }); tb.appendChild(hd);
+      var det = keepOpen(document.createElement('details'), 'sem:' + s, true); det.className = 'msem'; det.appendChild(el('summary', '', s));
       data.mats.forEach(function (m) {
         if (m.semestre !== s) return;
-        var tr = document.createElement('tr'), td1 = document.createElement('td'), td2 = document.createElement('td'), td3 = document.createElement('td');
-        var rb = el('button', 'namebtn', m.nom + ' ✎'); rb.type = 'button';
-        rb.addEventListener('click', function () { renameMat(m); });
-        td1.appendChild(rb);
-        var us = document.createElement('select'); us.className = 'uesel';
-        function fillUE() {
-          us.textContent = ''; var o0 = el('option', '', '— UE : aucune —'); o0.value = ''; us.appendChild(o0);
-          ueList(s).forEach(function (u) { var o = el('option', '', 'UE : ' + u); o.value = u; us.appendChild(o); });
-          var on = el('option', '', '+ Nouvelle UE…'); on.value = '__new'; us.appendChild(on); us.value = m.ue || '';
-        }
-        fillUE();
-        us.addEventListener('change', function () {
-          var v = us.value;
-          if (v === '__new') { var n = window.prompt('Nom de la nouvelle UE (semestre ' + s + ') :'); if (!n || !n.trim()) { us.value = m.ue || ''; return; } v = n.trim(); }
-          m.ue = v || null; save(); render(); toast(v ? 'Rangée dans « ' + v + ' ».' : 'UE retirée.');
-        });
-        td1.appendChild(us);
+        var c = el('div', 'mcard'), hd = el('div', 'mch');
+        hd.appendChild(plainBtn(m.nom + ' ✎', function () { renameMat(m); }, 'namebtn'));
+        var del = plainBtn('', function () { deleteMat(m); }, 'mdel'); del.setAttribute('aria-label', 'Supprimer la matière'); del.title = 'Supprimer'; del.appendChild(chSvg('x', 16)); hd.appendChild(del);
+        c.appendChild(hd);
+        var g = el('div', 'mgrid'), l1 = el('label', '', 'Examen'), l2 = el('label', '', 'Note /20');
         var inp = document.createElement('input'); inp.type = 'date'; inp.value = m.examen || '';
         inp.addEventListener('change', function () { m.examen = inp.value || null; save(); toast('Date enregistrée.'); });
-        td2.appendChild(inp);
         var nt = document.createElement('input'); nt.type = 'number'; nt.inputMode = 'decimal'; nt.step = '0.01'; nt.min = 0; nt.max = 20; nt.placeholder = '–'; nt.value = typeof m.note === 'number' ? m.note : '';
         nt.addEventListener('change', function () { m.note = nt.value === '' ? null : +nt.value; save(); toast('Note enregistrée.'); });
-        td3.appendChild(nt);
-        tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tb.appendChild(tr);
+        l1.appendChild(inp); l2.appendChild(nt); g.appendChild(l1); g.appendChild(l2); c.appendChild(g);
+        var us = document.createElement('select'); us.className = 'uesel';
+        var o0 = el('option', '', 'UE : aucune'); o0.value = ''; us.appendChild(o0);
+        ueList(s).forEach(function (u) { var o = el('option', '', 'UE : ' + u); o.value = u; us.appendChild(o); });
+        var on = el('option', '', '+ Nouvelle UE…'); on.value = '__new'; us.appendChild(on); us.value = m.ue || '';
+        us.addEventListener('change', function () {
+          var v = us.value;
+          function set(v) { m.ue = v || null; save(); render(); toast(v ? 'Rangée dans « ' + v + ' ».' : 'UE retirée.'); }
+          if (v === '__new') { us.value = m.ue || ''; ask({ t: 'Nouvelle UE (' + s + ')', v: '', ok: 'Créer' }, function (n) { if (n.trim()) set(n.trim()); }); return; }
+          set(v);
+        });
+        c.appendChild(us); det.appendChild(c);
       });
       var ub = el('div', 'uebox');
       ueList(s).forEach(function (u) {
-        var r = el('div', 'uerow'), nb = el('button', 'namebtn', u + ' ✎'); nb.type = 'button';
-        nb.addEventListener('click', function () {
-          var n = window.prompt('Renommer l’UE « ' + u + ' » (vide = supprimer l’UE, les matières restent) :', u); if (n === null) return; n = n.trim();
-          (data.ues || []).forEach(function (z) { if (z.semestre === s && z.nom === u) z.nom = n; }); if (!n) data.ues = data.ues.filter(function (z) { return z.nom; });
-          data.mats.forEach(function (m) { if (m.semestre === s && m.ue === u) m.ue = n || null; }); save(); render();
-        });
+        var r = el('div', 'uerow');
+        r.appendChild(plainBtn(u + ' ✎', function () {
+          ask({ t: 'Renommer l’UE', p: 'Vide = supprimer l’UE (les matières restent).', v: u, ok: 'OK' }, function (n) { n = n.trim();
+            (data.ues || []).forEach(function (z) { if (z.semestre === s && z.nom === u) z.nom = n; }); if (!n) data.ues = data.ues.filter(function (z) { return z.nom; });
+            data.mats.forEach(function (m) { if (m.semestre === s && m.ue === u) m.ue = n || null; }); save(); render(); });
+        }, 'namebtn'));
         var def = (data.ues || []).filter(function (z) { return z.semestre === s && z.nom === u; })[0];
         var inp = document.createElement('input'); inp.type = 'number'; inp.inputMode = 'decimal'; inp.step = '0.01'; inp.min = 0; inp.max = 20;
         var auto = (function () { var g = ueGroups(s).filter(function (x) { return x.nom === u; })[0]; return g && !(def && typeof def.moy === 'number') ? g.avg : null; })();
         inp.placeholder = auto !== null ? fmt1(auto) + ' (auto)' : 'moyenne /20'; inp.value = def && typeof def.moy === 'number' ? def.moy : '';
         inp.addEventListener('change', function () { ueDef(s, u).moy = inp.value === '' ? null : +inp.value; save(); render(); });
-        r.appendChild(nb); r.appendChild(inp); ub.appendChild(r);
+        r.appendChild(inp); ub.appendChild(r);
         var mw = el('div', 'uemats');
         data.mats.forEach(function (m) {
           if (m.semestre !== s || m.ue !== u) return;
-          var ch = el('button', 'chip', m.nom + (typeof m.note === 'number' ? ' · ' + fmt1(m.note) : '') + ' ✕'); ch.type = 'button';
-          ch.addEventListener('click', function () { m.ue = null; save(); render(); });
-          mw.appendChild(ch);
+          var chp = el('button', 'chip', m.nom + (typeof m.note === 'number' ? ' · ' + fmt1(m.note) : '') + ' ✕'); chp.type = 'button';
+          chp.addEventListener('click', function () { m.ue = null; save(); render(); }); mw.appendChild(chp);
         });
-        var ad = document.createElement('select'); ad.className = 'uesel'; var o0 = el('option', '', '+ Ajouter une matière'); o0.value = ''; ad.appendChild(o0);
-        data.mats.forEach(function (m, mi) { if (m.semestre !== s || m.ue === u) return; var o = el('option', '', m.nom + (m.ue ? ' (dans ' + m.ue + ')' : '')); o.value = String(mi); ad.appendChild(o); });
-        ad.addEventListener('change', function () { if (ad.value === '') return; data.mats[+ad.value].ue = u; save(); render(); });
-        if (ad.options.length > 1) mw.appendChild(ad);
         ub.appendChild(mw);
       });
-      var addUE = el('button', 'plain', '+ Ajouter une UE'); addUE.type = 'button';
-      addUE.addEventListener('click', function () { var n = window.prompt('Nom de la nouvelle UE (semestre ' + s + ') :'); if (!n || !n.trim()) return; ueDef(s, n.trim()); save(); render(); });
-      ub.appendChild(addUE); det.appendChild(ub);
-      det.appendChild(tb);
-      var ren = el('button', 'plain', 'Renommer ce semestre'); ren.type = 'button'; ren.style.margin = '8px 8px 0 0';
-      ren.addEventListener('click', function () { renameSem(s); });
-      det.appendChild(ren);
-      if (data.reglages.ordreSem !== 'alpha') {
-        var up = el('button', 'plain', '↑ Monter'), dn = el('button', 'plain', '↓ Descendre'); up.type = dn.type = 'button'; up.style.margin = dn.style.margin = '8px 8px 0 0';
-        up.addEventListener('click', function () { moveSem(s, -1); }); dn.addEventListener('click', function () { moveSem(s, 1); });
-        det.appendChild(up); det.appendChild(dn);
-      }
-      var add = el('button', 'plain', '+ Ajouter une matière'); add.type = 'button'; add.style.marginTop = '8px';
-      add.addEventListener('click', function () {
-        var n = window.prompt('Nom de la matière pour ' + s + ' :'); if (!n || !n.trim()) return;
-        data.mats.push({ semestre: s, nom: n.trim(), examen: null }); save(); render();
-      });
-      det.appendChild(add); box.appendChild(det);
+      ub.appendChild(plainBtn('+ Ajouter une UE', function () { ask({ t: 'Nouvelle UE (' + s + ')', v: '', ok: 'Créer' }, function (n) { if (!n.trim()) return; ueDef(s, n.trim()); save(); render(); }); }));
+      det.appendChild(ub);
+      var acts = el('div', 'macts');
+      acts.appendChild(plainBtn('+ Ajouter une matière', function () { ask({ t: 'Nouvelle matière (' + s + ')', v: '', ok: 'Ajouter' }, function (n) { n = n.trim(); if (!n) return; if (matTaken(s, n)) { toast('« ' + n + ' » existe déjà.'); return; } addMat(s, n); save(); render(); }); }));
+      acts.appendChild(plainBtn('Renommer le semestre', function () { renameSem(s); }));
+      if (data.reglages.ordreSem !== 'alpha') { acts.appendChild(plainBtn('↑', function () { moveSem(s, -1); })); acts.appendChild(plainBtn('↓', function () { moveSem(s, 1); })); }
+      det.appendChild(acts); box.appendChild(det);
     });
-    var ns = el('button', 'row plain', '+ Ajouter un semestre'); ns.type = 'button';
-    ns.addEventListener('click', function () {
-      var n = window.prompt('Nom du semestre (ex. S8 - 2A) :'); if (!n || !n.trim()) return;
-      var m = window.prompt('Première matière de ' + n.trim() + ' :'); if (!m || !m.trim()) return;
-      data.mats.push({ semestre: n.trim(), nom: m.trim(), examen: null }); save(); render();
-    });
-    box.appendChild(ns);
+    box.appendChild(plainBtn('+ Ajouter un semestre', newSem, 'row plain'));
+  }
+  /* premier lancement : trois actions, sans parcours imposé */
+  function welcomeCard() {
+    var c = el('div', 'card welcome'); c.appendChild(el('h2', '', 'Bienvenue'));
+    c.appendChild(el('p', 'muted', 'Pour commencer, crée une matière ou récupère tes exercices.'));
+    c.appendChild(plainBtn('Créer une matière', newSem, 'row primary'));
+    c.appendChild(plainBtn('Importer un fichier (Excel, CSV, .json)', function () { $('sheetInput').click(); }, 'row plain'));
+    c.appendChild(plainBtn('Récupérer mes données du Drive', function () { syncNow(false); }, 'row plain'));
+    return c;
   }
 
   /* ---------- vue : tableau de bord ---------- */
@@ -499,7 +567,7 @@
   }
   function needLevel(d) { for (var n = 0; n <= 11; n++) if (interval(n) >= d) return n; return 11; }
   function nivBadge(v, sz, cv) {
-    var c = cv === undefined ? v : cv, b = el('div', 'niv' + (sz ? ' ' + sz : ''), fmt1(Math.round(v * 10) / 10)); b.style.background = scale(c); b.style.color = c < 3.2 ? '#fff' : '#5c1530'; return b;
+    var c = cv === undefined ? v : cv, b = el('div', 'niv' + (sz ? ' ' + sz : ''), fmt1(Math.round(v * 10) / 10)); b.style.background = scale(c); b.style.color = c < 3 ? '#fff' : '#5c1530'; return b;
   }
   function fmt1(v) { return (Math.round(v * 100) / 100).toString().replace('.', ','); }
   function addQ(card, lg) { var qb = el('button', 'qbtn', '?'); qb.type = 'button'; qb.title = 'Afficher la légende'; qb.setAttribute('aria-label', 'Légende'); qb.addEventListener('click', function () { lg.hidden = !lg.hidden; qb.className = 'qbtn' + (lg.hidden ? '' : ' on'); }); card.querySelector('h2').appendChild(qb); }
@@ -507,6 +575,7 @@
   function renderDash() {
     DEC = null; DEFC = null;
     var box = $('v-dash'); box.textContent = ''; var cards = {}, draws = {};
+    if (!data.ex.length && !data.mats.length) { box.appendChild(welcomeCard()); return; }
     var t = TODAY(), L = data.ex.filter(function (x) { return visible(x) && x.evalue; });
     var late = 0, due = 0;
     L.forEach(function (x) { var r = revision(x); if (r < t) late++; else if (r < t + 1) due++; });
@@ -878,7 +947,7 @@
       if (d > xmax) return; var q = PK.filter(function (p) { return big ? true : p.I === d; });
       if (!q.length) return; var m = q.reduce(function (a, p) { return a + p.n; }, 0) / q.length, few = q.length < 3, bx = Math.min(R0 - 16, Math.max(L0 + 16, X(d))), by = B - 12; if (bx - lastBx < 34) by -= 22; lastBx = bx;
       g.fillStyle = few ? '#e4dde0' : scale(m); g.beginPath(); if (g.roundRect) g.roundRect(bx - 16, by - 9, 32, 18, 9); else g.rect(bx - 16, by - 9, 32, 18); g.fill();
-      g.fillStyle = few ? '#8a7a80' : (m < 3.2 ? '#fff' : '#5c1530'); g.font = 'bold 11px Poppins, system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(fmt1(Math.round(m * 10) / 10), bx, by); g.textBaseline = 'alphabetic';
+      g.fillStyle = few ? '#8a7a80' : (m < 3 ? '#fff' : '#5c1530'); g.font = 'bold 11px Poppins, system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(fmt1(Math.round(m * 10) / 10), bx, by); g.textBaseline = 'alphabetic';
     });
     /* courbe : rose là où assez de tes points l'appuient, grise là où elle est estimée (pas assez de points) */
     var pts = [], sg = 7, MD = MODEL >= 0 ? (D.lv[MODEL] || (big ? { a: 6, a0: 5, I: 0, tau: Infinity } : { a: sel, a0: Math.min(5, sel + 1), I: interval(sel), tau: Infinity })) : null;
@@ -928,7 +997,9 @@
           var ox = o.x, gp = t + d - (o.v ? o.ev : dnum(o.x.evalue));
           if (gp >= 0) {
             var pl = o.v ? o.L : lvl(o.x), nt = expectNote(pl, gp), nl = nt === null ? pl + 1 : Math.min(5, Math.round(nt)); if (nt !== null && nl >= 5 && pl >= 5) nl = pl + 1;
-            LOG.push({ id: ox.id, d: t + d, n: nl, m: o.m }); var r2 = Math.max(revisionAt(ox, t + d, interval(nl)), t + d + 1); if (r2 < t + N && !lastBeforeExam(ox, t + d)) cand.push({ v: true, x: ox, L: nl, ev: t + d, r: r2, ex: examAt(ox, t + d), i: 'v' + (vc++), m: o.m });
+            LOG.push({ id: ox.id, d: t + d, n: nl, m: o.m }); var r2 = Math.max(revisionAt(ox, t + d, interval(nl), t + d), t + d + 1), lb = lastBeforeExam(ox, t + d);
+            if (lb) r2 = Math.max(t + d + interval(nl), examNum(ox.semestre, ox.matiere) + 1); /* dernière révision d'avant examen : la suivante reprend le rythme normal après l'examen */
+            if (r2 < t + N) cand.push({ v: true, x: ox, L: nl, ev: t + d, r: r2, ex: lb ? false : examAt(ox, t + d), i: 'v' + (vc++), m: o.m });
           }
         }
         if (o.v) { if (o.r < t + d) { if (o.ex) pvLE[d] += o.m; else pvL[d] += o.m; } else if (o.ex) pvE[d] += o.m; else pv[d] += o.m; } else if (o.r < t + d) { if (o.ex) lateEx[d] += o.m; else late[d] += o.m; } else if (o.ex) ex[d] += o.m; else nm[d] += o.m;
@@ -1004,7 +1075,7 @@
   }
   function setRow(card, label, val, cb, unit, badge) {
     var r = el('label', 'srow'), l = el('span', 'sl');
-    if (badge !== undefined) { var bd = el('i', 'sbadge', String(badge)); bd.style.background = scale(badge); bd.style.color = badge < 3.2 ? '#fff' : '#5c1530'; l.appendChild(bd); }
+    if (badge !== undefined) { var bd = el('i', 'sbadge', String(badge)); bd.style.background = scale(badge); bd.style.color = badge < 3 ? '#fff' : '#5c1530'; l.appendChild(bd); }
     l.appendChild(el('span', '', label)); r.appendChild(l);
     var f = el('span', 'sf'); f.appendChild(numInput(val, cb)); f.appendChild(el('em', '', unit)); r.appendChild(f); card.appendChild(r);
   }
@@ -1022,6 +1093,7 @@
     sec('Niveaux et intervalles', ['Quand tu refais un exercice (✓) tu lui donnes un niveau de 0 à 5. La prochaine révision tombe après : ' + iv + '.', 'Après un 5, chaque 5 de plus d’affilée repousse la révision de ' + R.pasApres5 + ' j de plus (niveaux 6, 7…).']);
     sec('Mode examen', ['À moins de ' + R.debutExam + ' j d’un examen, les révisions de la matière sont compressées pour que tout soit vu avant l’examen : fait plus de ' + R.seuilButoire + ' j avant, on s’arrête ' + R.butoireSi + ' j avant ; sinon ' + (R.butoireSinon > 1 ? R.butoireSinon + ' j' : 'la veille') + ' avant.', 'Le mode est jugé à la date de chaque révision : une révision qui tombe après l’examen redevient normale. Aucune révision n’est prévue le jour de l’examen, ni après une révision déjà faite dans la période finale. Un exo au niveau 5 ou plus dont la révision normale tombe après l’examen n’est pas compressé : il reste hors mode examen et n’est pas reproposé avant.', 'Les exos en mode examen passent avant les autres. Entre matières, la plus en retard sur l’objectif du jour (le repère de la barre des cartes d’examen moins ta moyenne) passe d’abord ; dans une matière, les niveaux les plus bas, puis la date de révision.']);
     sec('Budget du jour et priorités', ['Budget par jour : ' + bud + '.', 'Les exos hors mode examen sont classés par date de révision la plus ancienne, puis niveau le plus bas. Ceux qui ne rentrent pas dans le budget attendent (un plus court peut passer devant).', 'Si le budget de demain est dépassé, ce qui y est prévu est d’abord avancé à aujourd’hui quand il reste de la place, avant d’être repoussé.', 'Sans limite : aujourd’hui, le temps affiché ne dépasse pas les heures qu’il reste jusqu’à demain, arrondies à l’heure du dessus (« Il reste X h ») ; les autres jours sans limite comptent au plus 24 h.']);
+    sec('Précisions (version 179)', ['Une révision n’est jamais prévue le jour même : au plus tôt le lendemain.', 'Une fois l’examen passé, l’exo revient aux intervalles normaux ; après la dernière révision d’avant examen, la suivante reprend le rythme normal.', 'Le jour de l’examen, les exos de la matière ne sont pas proposés.', '« Annuler » (dans le message qui suit une note, une suppression, un report ou une remise à zéro du minuteur, ou dans l’historique) remet l’exo exactement comme avant. Seule la dernière note d’un exo s’annule, et seulement s’il n’a pas changé depuis.', 'Une matière ne se supprime que si aucun exercice n’y est rattaché (corbeille comprise). Un semestre disparaît avec sa dernière matière.']);
     sec('Reporter', ['La flèche écarte un exo d’aujourd’hui : il ne prend plus de temps dans ton budget, mais sa date de révision ne change pas. Il revient demain.']);
     sec('Note effective (retard)', ['Un exo en retard perd de sa valeur : sa note affichée ne change pas, mais sa note effective baisse (elle peut avoir une virgule). Elle sert dans « Moyenne par matière » et dans les examens.', 'Elle vaut le niveau multiplié par la baisse lue sur la courbe de l’oubli de ce niveau, entre la date prévue et aujourd’hui. C’est exactement la courbe affichée (filtre du niveau).', 'Cette règle est ' + (R.baisseOff ? 'désactivée' : 'activée') + ' (réglage dans Niveaux).']);
     sec('Courbe de l’oubli', ['Chaque révision est un point, placé au nombre de jours réellement écoulés depuis la précédente. Rose : faite à ±20 % du J prévu pour son niveau (au moins 1 j). Gris : en retard ou trop en avance. Seuls les roses comptent dans la moyenne lissée ; les gris servent à mesurer la baisse due au retard.', 'La courbe est pleine là où assez de tes points l’appuient, en pointillés là où elle est estimée faute de données (à la date prévue d’un niveau, la note attendue est ce niveau + 1). Elle ne remonte jamais avec le temps : une bosse de tes points est lissée en moyenne avec le creux qui suit.', 'Le filtre « 6+ » regroupe les niveaux au-dessus de 5, comptés depuis leur date prévue ; un 6 ou plus refait avant 50 j va dans le filtre 5, à son vrai nombre de jours.']);
@@ -1044,7 +1116,7 @@
     hd.appendChild(bk); hd.appendChild(el('h2', '', SEC.filter(function (o) { return o[0] === setTab; })[0][1])); box.appendChild(hd);
     if (setTab === 'planning') {
     var c2 = setCard('Mode examen', 'flag');
-    [['Début du mode examen : jours avant l’examen', 'debutExam', 'jours'], ['Butoire : seuil — un exo fait plus de … jours avant l’examen est « tôt », sinon « tard »', 'seuilButoire', 'jours'], ['Butoire si fait tôt : ne plus réviser … jours avant l’examen', 'butoireSi', 'jours'], ['Butoire sinon (fait tard) : ne plus réviser … jours avant l’examen (0 ou 1 = jusqu’à la veille de l’examen)', 'butoireSinon', 'jours'], ['Minutes comptées par exo sans durée', 'minutesDefaut', 'min']].forEach(function (a) {
+    [['Début du mode examen : jours avant l’examen', 'debutExam', 'jours'], ['Butoire : seuil — un exo fait plus de … jours avant l’examen est « tôt », sinon « tard »', 'seuilButoire', 'jours'], ['Butoire si fait tôt : ne plus réviser … jours avant l’examen', 'butoireSi', 'jours'], ['Butoire sinon (fait tard) : ne plus réviser … jours avant l’examen (0 ou 1 = jusqu’à la veille de l’examen)', 'butoireSinon', 'jours']].forEach(function (a) {
       setRow(c2, a[0], R[a[1]], function (v) { R[a[1]] = v === null ? 0 : v; }, a[2]);
     });
       box.appendChild(c2);
@@ -1052,7 +1124,7 @@
       JOURS.forEach(function (j, i) {
         var d = el('label', 'wday'); d.appendChild(el('b', '', j)); d.appendChild(numInput(R.planning[i], function (v) { R.planning[i] = v; })); d.appendChild(el('em', '', 'min')); wk.appendChild(d);
       });
-      c3.appendChild(wk); box.appendChild(c3);
+      c3.appendChild(wk); c3.appendChild(el('p', 'muted', 'Case vide = sans limite ce jour-là.')); box.appendChild(c3);
       var c4 = setCard('Temps par défaut', 'clock'); setRow(c4, 'Durée d’un exercice sans durée indiquée', R.minutesDefaut, function (v) { R.minutesDefaut = v === null || v < 1 ? 5 : v; }, 'min'); box.appendChild(c4);
     } else if (setTab === 'niveaux') {
       var c1 = setCard('Intervalles de révision', 'cal');
@@ -1064,7 +1136,7 @@
       var cb = setCard('Baisse due au retard', 'flag');
       switchRow(cb, 'Faire baisser la note d’un exo en retard', function () { return !R.baisseOff; }, function (v) { R.baisseOff = !v; }, 'La note affichée ne change pas ; la note effective baisse d’après ta courbe de l’oubli.');
       var D = decay(); D.lv.forEach(function (m, a) {
-        var r = el('div', 'srow'); var l = el('span', 'sl'); var bd = el('i', 'sbadge', a === 6 ? '6+' : String(a)); bd.style.background = scale(Math.min(5, a)); bd.style.color = a < 3.2 ? '#fff' : '#5c1530'; l.appendChild(bd);
+        var r = el('div', 'srow'); var l = el('span', 'sl'); var bd = el('i', 'sbadge', a === 6 ? '6+' : String(a)); bd.style.background = scale(Math.min(5, a)); bd.style.color = a < 3 ? '#fff' : '#5c1530'; l.appendChild(bd);
         var bs = a === 6 ? curveAt(6, 0) : curveAt(a, interval(a)), wk = a === 6 ? curveAt(6, 7) : curveAt(a, interval(a) + 7), pc = bs > 0 ? Math.max(0, Math.round((1 - wk / bs) * 100)) : 0, nP = D.P.filter(function (p) { return a === 6 ? p.a > 5 : p.a === a; }).length;
         l.appendChild(el('span', '', nP + ' révision' + (nP > 1 ? 's' : '') + ' · perd environ ' + pc + ' % la première semaine de retard' + (nP < MINPTS ? ' (surtout estimé)' : ''))); r.appendChild(l); cb.appendChild(r);
       });
@@ -1109,8 +1181,8 @@
     while (d <= end && out.length < 60) {
       if (E0 !== null && d === E0) { d = E0 + 1; continue; }
       var gp = d - ev, nt = expectNote(lv, gp), nl = nt === null ? lv + 1 : Math.min(5, Math.round(nt)); if (nt !== null && nl >= 5 && lv >= 5) nl = lv + 1;
-      out.push({ d: d, n: nl, m: mins(x) }); if (lastBeforeExam(x, d)) { d = Math.max(d + 1, E0 + 1); lv = nl; ev = out[out.length - 1].d; continue; }
-      var r2 = Math.max(Math.floor(revisionAt(x, d, interval(nl)) + 1e-9), d + 1); lv = nl; ev = d; d = r2;
+      out.push({ d: d, n: nl, m: mins(x) }); if (lastBeforeExam(x, d)) { d = Math.max(d + interval(nl), E0 + 1); lv = nl; ev = out[out.length - 1].d; continue; } /* après la dernière révision d'avant examen : rythme normal */
+      var r2 = Math.max(Math.floor(revisionAt(x, d, interval(nl), d) + 1e-9), d + 1); lv = nl; ev = d; d = r2;
     }
     return out;
   }
@@ -1196,7 +1268,8 @@
     editingId = id; var x = id ? data.ex.filter(function (e) { return e.id === id; })[0] : null;
     $('editorTitle').textContent = x ? 'Modifier l’exercice' : 'Nouvel exercice';
     $('fSucces').textContent = ''; if (!x || x.ajoute) { var oa = el('option', '', 'Ajouté · pas encore de note'); oa.value = 'a'; $('fSucces').appendChild(oa); } NIV.forEach(function (n, i) { var o = el('option', '', i + ' · ' + n); o.value = i; $('fSucces').appendChild(o); });
-    fillSem(x ? x.semestre : (data.reglages.semestres[0] || null)); if (x) fillMat(x.matiere);
+    var last = x ? null : data.ex.slice().sort(function (a, b) { return creaTs(b) - creaTs(a); })[0]; /* nouvel exo : semestre et matière du dernier créé */
+    fillSem(x ? x.semestre : last ? last.semestre : (data.reglages.semestres[0] || null)); if (x) fillMat(x.matiere); else if (last && $('fSem').value === last.semestre) fillMat(last.matiere);
     $('fTitre').value = x ? x.intitule || '' : ''; $('fSucces').value = x ? (x.ajoute ? 'a' : x.succes) : 3;
     $('fDate').value = x ? x.evalue : todayISO(); $('fMin').value = x && x.minutes ? x.minutes : ''; $('fNote').value = x && x.note ? x.note : '';
     $('delBtn').hidden = !x; editorInfo(x); $('editor').showModal();
@@ -1215,8 +1288,11 @@
     $('doneTxt').textContent = ''; $('doneMin').value = mins(x); var chk = chGetAll()[id]; if (chk && chMs(chk) >= 30000) { $('doneMin').value = Math.max(1, Math.round(chMs(chk) / 60000)); $('doneTxt').textContent = 'Temps repris de ton minuteur : ' + chFmt(chMs(chk)) + '.'; }
     var b = $('doneBtns'); b.textContent = '';
     NIV.forEach(function (n, i) {
-      var bt = el('button', '', String(i)); bt.type = 'button'; bt.appendChild(el('small', '', n));
-      bt.addEventListener('click', function () { var ca = chGetAll(); delete ca[x.id]; chSetAll(ca); addHist(x, i); x.succes = i; if (i < 5) x.p5 = 0; x.evalue = todayISO(); save(); $('doneDlg').close(); render(); toast('Prochaine révision : ' + fromNum(revision(x))); });
+      var bt = el('button', '', String(i)); bt.type = 'button'; bt.appendChild(el('small', '', n)); var dj = revisionIf(x, i) - TODAY(); bt.appendChild(el('em', 'nxt', dj === 1 ? 'demain' : 'dans ' + dj + ' j'));
+      bt.addEventListener('click', function () {
+        var ca = chGetAll(), ch0 = ca[x.id]; delete ca[x.id]; chSetAll(ca); var h = addHist(x, i); x.succes = i; if (i < 5) x.p5 = 0; x.evalue = todayISO(); save(); $('doneDlg').close(); render();
+        toast('Prochaine révision : ' + fromNum(revision(x)), function () { if (!canUndo(h)) { toast('L’exo a changé depuis : annulation impossible.'); return; } undoHist(h); if (ch0) { var a = chGetAll(); a[x.id] = ch0; chSetAll(a); } save(); render(); toast('Note annulée.'); });
+      });
       b.appendChild(bt);
     });
     $('doneDlg').showModal();
@@ -1409,8 +1485,8 @@
       var p = isCsv ? Promise.resolve(parseCsv(new TextDecoder().decode(r.result))) : readXlsx(r.result);
       p.then(importSheets).then(function (out) {
         if (!out.ex.length) { toast('Aucun exercice trouvé : il faut les colonnes Succès, Semestre, Matière et Evalué le.'); return; }
-        if (data.ex.length && !window.confirm('Remplacer les ' + data.ex.length + ' exercices actuels par les ' + out.ex.length + ' du tableur ?')) return;
-        addVersion('Avant import Excel'); data = fix(out); save(); view = 'today'; render(); toast(out.ex.length + ' exercices importés. (Menu ⋮ : Anciennes versions pour revenir en arrière)');
+        function go() { addVersion('Avant import Excel'); data = fix(out); save(); view = 'today'; render(); toast(out.ex.length + ' exercices importés. (Menu ⋮ : Anciennes versions pour revenir en arrière)'); }
+        if (data.ex.length) ask({ t: 'Remplacer tes exercices ?', p: 'Les ' + data.ex.length + ' exercices actuels seront remplacés par les ' + out.ex.length + ' du tableur (une sauvegarde est faite avant).', ok: 'Remplacer', danger: true }, go); else go();
       }).catch(function () { toast('Ce fichier n’a pas le bon format (onglet « Table exercice » attendu).'); });
     };
     r.readAsArrayBuffer(f);
@@ -1429,14 +1505,18 @@
   }
   var SYNC_KEY = 'mes-exercices-synchro-adresse';
   function syncUrl() { try { return localStorage.getItem(SYNC_KEY) || ''; } catch (e) { return ''; } }
-  function askSyncUrl() {
-    var u = window.prompt('Colle ici l’adresse de ton application web Apps Script (elle finit par /exec) :', syncUrl()); if (u === null) return '';
-    u = u.trim(); try { localStorage.setItem(SYNC_KEY, u); } catch (e) { /* ignoré */ } return u;
+  function askSyncUrl(cb) {
+    ask({ t: 'Adresse de synchronisation', p: 'Colle l’adresse de ton application web Apps Script (elle finit par /exec).', v: syncUrl(), ok: 'Enregistrer' }, function (u) {
+      u = u.trim(); try { localStorage.setItem(SYNC_KEY, u); } catch (e) { /* ignoré */ } if (u) cb(u);
+    });
   }
   var syncBusy = false, syncTimer = null;
   /* fusion de deux sauvegardes : on garde tout ce qui existe d'un côté ou de l'autre */
   function mergeData(A, B, aNewer) {
     var base = JSON.parse(JSON.stringify(aNewer ? A : B)), oth = JSON.parse(JSON.stringify(aNewer ? B : A));
+    var rk = {}, ren = (base.renoms || []).concat(oth.renoms || []).filter(function (r) { var k = JSON.stringify(r); if (rk[k]) return false; rk[k] = 1; return true; }).sort(function (a, b) { return (a.t || 0) - (b.t || 0); });
+    ren.forEach(function (r) { applyRen(base, r); applyRen(oth, r); }); base.renoms = ren;
+    var gk = {}; base.matsSuppr = (base.matsSuppr || []).concat(oth.matsSuppr || []).filter(function (g) { var k = g.k + '|' + g.t; if (gk[k]) return false; gk[k] = 1; return true; });
     var ex = {}; (base.ex || []).forEach(function (x) { ex[x.id] = x; });
     (oth.ex || []).forEach(function (x) {
       var y = ex[x.id]; if (!y) { base.ex.push(x); return; }
@@ -1453,6 +1533,8 @@
     (oth.mats || []).forEach(function (m) { var y = mm[m.semestre + '|' + m.nom]; if (!y) { base.mats.push(m); return; } Object.keys(m).forEach(function (k) { if ((y[k] === undefined || y[k] === '' || y[k] === null) && m[k] !== undefined) y[k] = m[k]; }); });
     var uu = {}; base.ues = base.ues || []; base.ues.forEach(function (u) { uu[u.semestre + '|' + u.nom] = 1; });
     (oth.ues || []).forEach(function (u) { if (!uu[u.semestre + '|' + u.nom]) base.ues.push(u); });
+    var used = {}; base.ex.concat(base.corbeille.map(function (c) { return c.ex; })).forEach(function (x) { used[x.semestre + '|' + x.matiere] = 1; }); var seenM = {};
+    base.mats = base.mats.filter(function (m) { var k = m.semestre + '|' + m.nom; if (seenM[k]) return false; seenM[k] = 1; return used[k] || !base.matsSuppr.some(function (g) { return g.k === k && g.t > (m.cree || 0); }); });
     base.chronos = base.chronos || {}; var och = oth.chronos || {}; Object.keys(och).forEach(function (id) { var y = base.chronos[id]; if (!y || (och[id].t || 0) > (y.t || 0)) base.chronos[id] = och[id]; });
     return base;
   }
@@ -1482,7 +1564,7 @@
       .then(function () { syncBusy = false; });
   }
   function syncNow(forceAsk) {
-    var url = forceAsk ? askSyncUrl() : (syncUrl() || askSyncUrl()); if (!url) return;
+    var url = syncUrl(); if (forceAsk || !url) { askSyncUrl(function (u) { syncCore(u, false); }); return; }
     syncCore(url, false);
   }
   function syncAuto() { var u = syncUrl(); if (u && navigator.onLine !== false) syncCore(u, true); }
@@ -1490,7 +1572,7 @@
 
   /* ---------- affichage ---------- */
   function render() {
-    DEC = null; DEFC = null;
+    DEC = null; resetCaches();
     renderFilters(); document.body.classList.toggle('wide', view === 'dash' || view === 'set');
     ['today', 'exos', 'mats', 'dash', 'set'].forEach(function (v) { $('v-' + v).hidden = v !== view; });
     document.querySelectorAll('#tabs button').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.view === view ? 'true' : 'false'); });
@@ -1523,7 +1605,7 @@
   $('examBack').addEventListener('click', function () { $('examDlg').close(); });
   $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
   $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; data.reglages.matieres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 178'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 179'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
   $('syncUrlBtn').addEventListener('click', function () { $('menu').close(); syncNow(true); });
@@ -1539,6 +1621,7 @@
     window.addEventListener('popstate', function () {
       var open = document.querySelector('dialog[open]');
       if (open) { open.close(); history.pushState({ a: 1 }, ''); return; }
+      if (view === 'set' && setTab) { setTab = null; render(); window.scrollTo(0, 0); history.pushState({ a: 1 }, ''); return; }
       if (view !== 'today') { view = 'today'; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } window._top = 1; render(); window.scrollTo(0, 0); history.pushState({ a: 1 }, ''); }
     });
   } catch (e) { /* ignoré */ }
@@ -1547,9 +1630,15 @@
   $('form').addEventListener('submit', saveEditor);
   $('fSem').addEventListener('change', function () { fillMat(); });
   $('cancelBtn').addEventListener('click', function () { $('editor').close(); });
-  $('delBtn').addEventListener('click', function () { var gone = data.ex.filter(function (x) { return x.id === editingId; })[0]; if (gone) { data.corbeille = data.corbeille || []; data.corbeille.push({ ts: Date.now(), ex: gone }); } data.ex = data.ex.filter(function (x) { return x.id !== editingId; }); save(); $('editor').close(); render(); toast('Exercice supprimé.'); });
+  $('delBtn').addEventListener('click', function () {
+    var gone = data.ex.filter(function (x) { return x.id === editingId; })[0], c = null; if (gone) { data.corbeille = data.corbeille || []; c = { ts: Date.now(), ex: gone }; data.corbeille.push(c); }
+    data.ex = data.ex.filter(function (x) { return x.id !== editingId; }); save(); $('editor').close(); render();
+    toast('Exercice supprimé.', c && function () { if (data.corbeille.indexOf(c) < 0 || data.ex.some(function (e) { return e.id === gone.id; })) return; data.corbeille = data.corbeille.filter(function (z) { return z !== c; }); data.ex.push(gone); save(); render(); toast('Exercice restauré.'); });
+  });
   $('doneCancel').addEventListener('click', function () { $('doneDlg').close(); });
-  window.addEventListener('resize', function () { if (view === 'dash') renderDash(); });
+  var lastW = window.innerWidth; window.addEventListener('resize', function () { if (window.innerWidth === lastW) return; lastW = window.innerWidth; if (view === 'dash') renderDash(); });
+  $('askForm').addEventListener('submit', function (e) { e.preventDefault(); var cb = ask.cb, v = $('askI').hidden ? true : $('askI').value; ask.cb = null; $('askDlg').close(); if (cb) cb(v); });
+  $('askNo').addEventListener('click', function () { ask.cb = null; $('askDlg').close(); });
   render();
   try { if (document.fonts && document.fonts.load) Promise.all([document.fonts.load('400 12px Poppins'), document.fonts.load('700 12px Poppins')]).then(function () { if (view === 'dash') renderDash(); }); } catch (e) { /* ignoré */ }
   syncAuto();
