@@ -339,7 +339,9 @@
   function canUndo(h) {
     if (!h || h.fige) return false; var x = data.ex.filter(function (e) { return e.id === h.id; })[0]; if (!x) return false;
     var last = (data.hist || []).filter(function (z) { return z.id === h.id; }).sort(function (a, b) { return a.ts - b.ts; }).pop();
-    return last === h && x.evalue === h.jour && (x.succes || 0) === Math.min(5, h.niveau) && !x.ajoute;
+    if (last !== h) return false;
+    if (h.apres) return PREVK.every(function (k) { return JSON.stringify(x[k]) === JSON.stringify(h.apres[k]); }); /* rien n'a changé depuis la note */
+    return x.evalue === h.jour && (x.succes || 0) === Math.min(5, h.niveau) && !x.ajoute;
   }
   function undoHist(h) {
     var x = data.ex.filter(function (e) { return e.id === h.id; })[0], p = h.prev;
@@ -399,6 +401,7 @@
       if (D.reglages) ['semestres', 'semOrdre'].forEach(function (k) { if (Array.isArray(D.reglages[k])) D.reglages[k] = D.reglages[k].map(function (z) { return z === r.de ? r.a : z; }).filter(function (z, i, a) { return a.indexOf(z) === i; }); });
     } else {
       (D.mats || []).forEach(function (m) { if (m.semestre === r.s && m.nom === r.de) m.nom = r.a; }); exs.forEach(function (x) { if (x.semestre === r.s && x.matiere === r.de) x.matiere = r.a; });
+      var f = D.reglages && D.reglages.matieres, ka = norm(r.a).trim(); if (Array.isArray(f) && f.indexOf(norm(r.de).trim()) >= 0 && f.indexOf(ka) < 0) f.push(ka); /* le filtre suit le renommage */
     }
   }
   function doRen(r) { applyRen(data, r); data.renoms = data.renoms || []; r.t = Date.now(); data.renoms.push(r); }
@@ -414,7 +417,6 @@
     ask({ t: 'Renommer la matière', v: m.nom, ok: 'Renommer' }, function (n) {
       n = n.trim(); if (!n || n === m.nom) return;
       if (matTaken(m.semestre, n, m)) { toast('« ' + n + ' » existe déjà dans ' + m.semestre + '.'); return; }
-      var ok = norm(m.nom).trim(), f = data.reglages.matieres || []; if (f.indexOf(ok) >= 0 && f.indexOf(norm(n).trim()) < 0) f.push(norm(n).trim());
       if (examSel && examSel.semestre === m.semestre && examSel.nom === m.nom) examSel.nom = n;
       doRen({ k: 'mat', s: m.semestre, de: m.nom, a: n }); save(); render(); toast('Matière renommée.');
     });
@@ -1007,7 +1009,7 @@
       cand.forEach(function (o) {
         if (done[o.i] || o.r >= t + d + 1) return;
         if (d === 0 && o.x && o.x.reporte === todayISO()) return;
-        if (examNum(o.x.semestre, o.x.matiere) === t + d && o.ex) return;
+        if (examNum(o.x.semestre, o.x.matiere) === t + d) return; /* jour de l'examen : rien dans cette matière, comme dans plan() */
         if (effB >= 1e9 || cum + o.m <= effB - effF || (cum === 0 && effB > effF)) take(o);
       });
       /* budget de demain dépassé : on avance d'abord à aujourd'hui (la veille) ce qui y est prévu, s'il reste de la place */
@@ -1290,7 +1292,7 @@
     NIV.forEach(function (n, i) {
       var bt = el('button', '', String(i)); bt.type = 'button'; bt.appendChild(el('small', '', n)); var dj = revisionIf(x, i) - TODAY(); bt.appendChild(el('em', 'nxt', dj === 1 ? 'demain' : 'dans ' + dj + ' j'));
       bt.addEventListener('click', function () {
-        var ca = chGetAll(), ch0 = ca[x.id]; delete ca[x.id]; chSetAll(ca); var h = addHist(x, i); x.succes = i; if (i < 5) x.p5 = 0; x.evalue = todayISO(); save(); $('doneDlg').close(); render();
+        var ca = chGetAll(), ch0 = ca[x.id]; delete ca[x.id]; chSetAll(ca); var h = addHist(x, i); x.succes = i; if (i < 5) x.p5 = 0; x.evalue = todayISO(); h.apres = {}; PREVK.forEach(function (k) { if (k in x) h.apres[k] = x[k]; }); save(); $('doneDlg').close(); render();
         toast('Prochaine révision : ' + fromNum(revision(x)), function () { if (!canUndo(h)) { toast('L’exo a changé depuis : annulation impossible.'); return; } undoHist(h); if (ch0) { var a = chGetAll(); a[x.id] = ch0; chSetAll(a); } save(); render(); toast('Note annulée.'); });
       });
       b.appendChild(bt);
