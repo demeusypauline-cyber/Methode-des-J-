@@ -489,22 +489,24 @@
     }
     if (!data.mats.length) box.appendChild(welcomeCard());
     semestres().forEach(function (s) {
-      var det = keepOpen(document.createElement('details'), 'sem:' + s, true); det.className = 'msem'; det.appendChild(el('summary', '', s));
-      data.mats.forEach(function (m) {
-        if (m.semestre !== s) return;
-        var c = el('div', 'mcard'), hd = el('div', 'mch');
-        hd.appendChild(plainBtn(m.nom + ' ✎', function () { renameMat(m); }, 'namebtn'));
-        var del = plainBtn('', function () { deleteMat(m); }, 'mdel'); del.setAttribute('aria-label', 'Supprimer la matière'); del.title = 'Supprimer'; del.appendChild(chSvg('x', 16)); hd.appendChild(del);
-        c.appendChild(hd);
-        var g = el('div', 'mgrid'), l1 = el('label', '', 'Examen'), l2 = el('label', '', 'Note /20');
+      var mats = data.mats.filter(function (m) { return m.semestre === s; });
+      var det = keepOpen(document.createElement('details'), 'sem:' + s, true); det.className = 'msem';
+      var sm = el('summary'); sm.appendChild(el('b', '', s)); sm.appendChild(el('span', 'mcount', mats.length + ' matière' + (mats.length > 1 ? 's' : ''))); det.appendChild(sm);
+      var list = el('div', 'mlist2');
+      mats.forEach(function (m) {
+        var r = el('div', 'mrow2'), hd = el('div', 'mch');
+        hd.appendChild(el('b', 'mname', m.nom));
+        var mm = document.createElement('details'); mm.className = 'mmenu'; var ms = el('summary', '', '⋯'); ms.setAttribute('aria-label', 'Actions pour ' + m.nom); mm.appendChild(ms);
+        var mp = el('div', 'mpop'); mp.appendChild(plainBtn('Renommer', function () { mm.open = false; renameMat(m); }, 'mopt')); mp.appendChild(plainBtn('Supprimer', function () { mm.open = false; deleteMat(m); }, 'mopt danger')); mm.appendChild(mp);
+        hd.appendChild(mm); r.appendChild(hd);
+        var g = el('div', 'mgrid'), l1 = el('label', '', 'Examen'), l2 = el('label', '', 'Note /20'), l3 = el('label', 'mue', 'UE');
         var inp = document.createElement('input'); inp.type = 'date'; inp.value = m.examen || '';
         inp.addEventListener('change', function () { m.examen = inp.value || null; save(); toast('Date enregistrée.'); });
         var nt = document.createElement('input'); nt.type = 'number'; nt.inputMode = 'decimal'; nt.step = '0.01'; nt.min = 0; nt.max = 20; nt.placeholder = '–'; nt.value = typeof m.note === 'number' ? m.note : '';
         nt.addEventListener('change', function () { m.note = nt.value === '' ? null : +nt.value; save(); toast('Note enregistrée.'); });
-        l1.appendChild(inp); l2.appendChild(nt); g.appendChild(l1); g.appendChild(l2); c.appendChild(g);
-        var us = document.createElement('select'); us.className = 'uesel';
-        var o0 = el('option', '', 'UE : aucune'); o0.value = ''; us.appendChild(o0);
-        ueList(s).forEach(function (u) { var o = el('option', '', 'UE : ' + u); o.value = u; us.appendChild(o); });
+        var us = document.createElement('select');
+        var o0 = el('option', '', 'Aucune'); o0.value = ''; us.appendChild(o0);
+        ueList(s).forEach(function (u) { var o = el('option', '', u); o.value = u; us.appendChild(o); });
         var on = el('option', '', '+ Nouvelle UE…'); on.value = '__new'; us.appendChild(on); us.value = m.ue || '';
         us.addEventListener('change', function () {
           var v = us.value;
@@ -512,36 +514,36 @@
           if (v === '__new') { us.value = m.ue || ''; ask({ t: 'Nouvelle UE (' + s + ')', v: '', ok: 'Créer' }, function (n) { if (n.trim()) set(n.trim()); }); return; }
           set(v);
         });
-        c.appendChild(us); det.appendChild(c);
+        l1.appendChild(inp); l2.appendChild(nt); l3.appendChild(us); g.appendChild(l1); g.appendChild(l2); g.appendChild(l3); r.appendChild(g);
+        list.appendChild(r);
       });
-      var ub = el('div', 'uebox');
-      ueList(s).forEach(function (u) {
-        var r = el('div', 'uerow');
-        r.appendChild(plainBtn(u + ' ✎', function () {
+      det.appendChild(list);
+      det.appendChild(plainBtn('+ Ajouter une matière', function () { ask({ t: 'Nouvelle matière (' + s + ')', v: '', ok: 'Ajouter' }, function (n) { n = n.trim(); if (!n) return; if (matTaken(s, n)) { toast('« ' + n + ' » existe déjà.'); return; } addMat(s, n); save(); render(); }); }, 'row primary madd'));
+      /* unités d'enseignement : création, renommage, moyenne ; l'affectation se fait dans chaque matière */
+      var ues = ueList(s), ud = keepOpen(document.createElement('details'), 'ue:' + s, false); ud.className = 'muez';
+      ud.appendChild(el('summary', '', 'Unités d’enseignement (' + ues.length + ')'));
+      ues.forEach(function (u) {
+        var r = el('div', 'uerow2'), top = el('div', 'mch');
+        top.appendChild(plainBtn(u + ' ✎', function () {
           ask({ t: 'Renommer l’UE', p: 'Vide = supprimer l’UE (les matières restent).', v: u, ok: 'OK' }, function (n) { n = n.trim();
             (data.ues || []).forEach(function (z) { if (z.semestre === s && z.nom === u) z.nom = n; }); if (!n) data.ues = data.ues.filter(function (z) { return z.nom; });
             data.mats.forEach(function (m) { if (m.semestre === s && m.ue === u) m.ue = n || null; }); save(); render(); });
         }, 'namebtn'));
         var def = (data.ues || []).filter(function (z) { return z.semestre === s && z.nom === u; })[0];
-        var inp = document.createElement('input'); inp.type = 'number'; inp.inputMode = 'decimal'; inp.step = '0.01'; inp.min = 0; inp.max = 20;
+        var inp = document.createElement('input'); inp.type = 'number'; inp.inputMode = 'decimal'; inp.step = '0.01'; inp.min = 0; inp.max = 20; inp.setAttribute('aria-label', 'Moyenne de ' + u);
         var auto = (function () { var g = ueGroups(s).filter(function (x) { return x.nom === u; })[0]; return g && !(def && typeof def.moy === 'number') ? g.avg : null; })();
         inp.placeholder = auto !== null ? fmt1(auto) + ' (auto)' : 'moyenne /20'; inp.value = def && typeof def.moy === 'number' ? def.moy : '';
         inp.addEventListener('change', function () { ueDef(s, u).moy = inp.value === '' ? null : +inp.value; save(); render(); });
-        r.appendChild(inp); ub.appendChild(r);
-        var mw = el('div', 'uemats');
-        data.mats.forEach(function (m) {
-          if (m.semestre !== s || m.ue !== u) return;
-          var chp = el('button', 'chip', m.nom + (typeof m.note === 'number' ? ' · ' + fmt1(m.note) : '') + ' ✕'); chp.type = 'button';
-          chp.addEventListener('click', function () { m.ue = null; save(); render(); }); mw.appendChild(chp);
-        });
-        ub.appendChild(mw);
+        top.appendChild(inp); r.appendChild(top);
+        var inU = mats.filter(function (m) { return m.ue === u; }).map(function (m) { return m.nom; });
+        r.appendChild(el('div', 'muted uem', inU.length ? inU.join(' · ') : 'Aucune matière : choisis cette UE dans une matière.'));
+        ud.appendChild(r);
       });
-      ub.appendChild(plainBtn('+ Ajouter une UE', function () { ask({ t: 'Nouvelle UE (' + s + ')', v: '', ok: 'Créer' }, function (n) { if (!n.trim()) return; ueDef(s, n.trim()); save(); render(); }); }));
-      det.appendChild(ub);
+      ud.appendChild(plainBtn('+ Ajouter une UE', function () { ask({ t: 'Nouvelle UE (' + s + ')', v: '', ok: 'Créer' }, function (n) { if (!n.trim()) return; ueDef(s, n.trim()); save(); render(); }); }));
+      det.appendChild(ud);
       var acts = el('div', 'macts');
-      acts.appendChild(plainBtn('+ Ajouter une matière', function () { ask({ t: 'Nouvelle matière (' + s + ')', v: '', ok: 'Ajouter' }, function (n) { n = n.trim(); if (!n) return; if (matTaken(s, n)) { toast('« ' + n + ' » existe déjà.'); return; } addMat(s, n); save(); render(); }); }));
-      acts.appendChild(plainBtn('Renommer le semestre', function () { renameSem(s); }));
-      if (data.reglages.ordreSem !== 'alpha') { acts.appendChild(plainBtn('↑', function () { moveSem(s, -1); })); acts.appendChild(plainBtn('↓', function () { moveSem(s, 1); })); }
+      acts.appendChild(plainBtn('Renommer le semestre', function () { renameSem(s); }, 'link'));
+      if (data.reglages.ordreSem !== 'alpha') { var bu = plainBtn('↑', function () { moveSem(s, -1); }, 'link'), bd = plainBtn('↓', function () { moveSem(s, 1); }, 'link'); bu.setAttribute('aria-label', 'Monter le semestre'); bd.setAttribute('aria-label', 'Descendre le semestre'); acts.appendChild(bu); acts.appendChild(bd); }
       det.appendChild(acts); box.appendChild(det);
     });
     box.appendChild(plainBtn('+ Ajouter un semestre', newSem, 'row plain'));
@@ -705,10 +707,6 @@
     var lg2 = el('div', 'legend'); [0, 1, 2, 3, 4, 5].forEach(function (i) { var sp = el('span'); var ic = el('i'); ic.style.background = C_NIV[i]; sp.appendChild(ic); sp.appendChild(document.createTextNode(i === 5 ? '5+' : String(i))); lg2.appendChild(sp); }); (function () { var sp = el('span'), ic = el('i'); ic.style.background = '#cfcfd6'; sp.appendChild(ic); sp.appendChild(document.createTextNode('Ajouté')); lg2.appendChild(sp); })();
     lg2.hidden = true; c2.appendChild(lg2); addQ(c2, lg2); c2.classList.add('ctr'); cards.donut = c2; draws.donut = function () { drawDonut(cv2, L); };
 
-    var c4 = dcard('Temps de révision par tranche de J');
-    var cv4 = document.createElement('canvas'); c4.appendChild(cv4);
-    var lg4 = el('div', 'legend'); J_LAB.forEach(function (n, i) { var sp = el('span'); var ic = el('i'); ic.style.background = C_J[i]; sp.appendChild(ic); sp.appendChild(document.createTextNode(n)); lg4.appendChild(sp); }); (function () { var sp = el('span'), ic = el('i'); ic.style.background = '#cfcfd6'; sp.appendChild(ic); sp.appendChild(document.createTextNode('Ajouté')); lg4.appendChild(sp); })();
-    lg4.hidden = true; c4.appendChild(lg4); addQ(c4, lg4); c4.classList.add('ctr'); cards.jring = c4; draws.jring = function () { drawDonut(cv4, L, true); };
 
     var c5 = dcard('Courbe de l’oubli');
     var cv5 = document.createElement('canvas'); c5.appendChild(cv5);
@@ -720,7 +718,7 @@
     c5.insertBefore(fl5, cv5);
     lg5.hidden = true; c5.appendChild(lg5); addQ(c5, lg5); c5.classList.add('ctr'); cards.oubli = c5; draws.oubli = function () { drawOubli(cv5); }; c5.classList.add('wide');
     cards.charge.classList.add('wide'); cards.habit.classList.add('wide');
-    var R = data.reglages, keys = ['sem', 'mat', 'charge', 'habit', 'exam', 'donut', 'jring', 'oubli'];
+    var R = data.reglages, keys = ['sem', 'mat', 'charge', 'habit', 'exam', 'donut', 'oubli']; /* « Temps par tranche de J » retiré (tour 29) */
     var ord = (R.dashOrdre || []).filter(function (k) { return keys.indexOf(k) >= 0; }); keys.forEach(function (k) { if (ord.indexOf(k) < 0) { if (k === 'ue' && ord.indexOf('sem') >= 0) ord.splice(ord.indexOf('sem') + 1, 0, k); else ord.push(k); } });
     var hid = R.dashCache || [];
     R.dashLarge = R.dashLarge || {}; keys.forEach(function (k) { if (R.dashLarge[k] !== undefined) cards[k].classList.toggle('wide', !!R.dashLarge[k]); });
@@ -859,7 +857,7 @@
   function jIdx(x) { var d = revision(x) - TODAY(); return d < 0 ? 0 : d === 0 ? 1 : d <= 3 ? 2 : d <= 10 ? 3 : d <= 25 ? 4 : d <= 50 ? 5 : 6; }
   function drawDonut(cv, L, J) {
     var NB = J ? 8 : 7, COL = (J ? C_J : C_NIV).concat(['#cfcfd6']), all = [], inn = [], sum = 0; for (var zz = 0; zz < NB; zz++) { all.push(0); inn.push(0); }
-    L.forEach(function (x) { var n = x.ajoute ? NB - 1 : J ? jIdx(x) : Math.min(5, x.succes || 0), wt = J ? mins(x) : 1; all[n] += wt; if (modeExam(x)) inn[n] += wt; sum += J ? wt : (x.ajoute ? 0 : n); });
+    L.forEach(function (x) { var e = J || x.ajoute ? 0 : Math.min(5, effLvl(x)), n = x.ajoute ? NB - 1 : J ? jIdx(x) : Math.floor(e + 1e-9), wt = J ? mins(x) : 1; /* catégorie = partie entière de la note effective : [2 ; 3[ → 2 */ all[n] += wt; if (modeExam(x)) inn[n] += wt; sum += J ? wt : (x.ajoute ? 0 : e); });
     var w = cv.clientWidth || 320, h = Math.round(Math.min(Math.max(230, w * (w > 600 ? 0.5 : 0.8)), 400)), dpr = window.devicePixelRatio || 1;
     cv.width = w * dpr; cv.height = h * dpr; cv.style.height = h + 'px';
     var g = cv.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, w, h);

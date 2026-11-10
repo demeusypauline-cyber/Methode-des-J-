@@ -579,3 +579,31 @@ details.hist .card button{padding:4px 10px;font-size:.8rem}
 #menu .mhide{display:none}
 .dana{text-align:center!important;font-weight:600;margin:4px 0 14px!important}
 #syncUrlBtn[hidden]{display:none!important}
+/* ---------- Matières (tour 30) ---------- */
+details.msem{background:#fff;border:1px solid var(--line);border-radius:18px;padding:4px 14px 12px;margin:0 0 14px}
+details.msem>summary{display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer}
+details.msem>summary b{font-size:1rem;color:var(--bord)}
+.mcount{font-size:.76rem;color:var(--muted);margin-left:auto}
+.mlist2 .mrow2{padding:10px 0;border-top:1px solid var(--line)}
+.mrow2 .mch{display:flex;align-items:center;gap:8px}
+.mname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.95rem}
+.mmenu{position:relative;flex:none}
+.mmenu>summary{list-style:none;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:50%;color:var(--muted);font-size:1.2rem;cursor:pointer}
+.mmenu>summary::-webkit-details-marker{display:none}
+.mpop{position:absolute;right:0;top:38px;z-index:5;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 24px #ad145726;display:flex;flex-direction:column;min-width:140px;overflow:hidden}
+.mopt{border:0;background:none;text-align:left;padding:12px 14px;font:inherit;color:var(--ink)}
+.mopt.danger{color:var(--warn)}
+.mrow2 .mgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:6px}
+.mrow2 .mgrid label{margin:0;font-size:.72rem;color:var(--muted)}
+.mrow2 .mgrid input,.mrow2 .mgrid select{display:block;width:100%;box-sizing:border-box;min-width:0;height:40px;border:1px solid var(--line);border-radius:10px;padding:0 8px;font:inherit;font-size:.86rem;background:var(--bg);margin-top:3px;color:var(--ink)}
+@media (max-width:420px){.mrow2 .mgrid{grid-template-columns:1fr 1fr}.mrow2 .mgrid .mue{grid-column:1 / -1}}
+.madd{text-align:center!important;margin:6px 0 10px!important}
+details.muez{border-top:1px solid var(--line);padding-top:6px}
+details.muez>summary{padding:8px 0;font-size:.86rem;color:var(--muted);cursor:pointer}
+.uerow2{padding:6px 0}
+.uerow2 .mch{display:flex;align-items:center;gap:8px}
+.uerow2 .namebtn{flex:1;min-width:0;font-weight:600}
+.uerow2 input{width:110px;height:36px;border:1px solid var(--line);border-radius:10px;padding:0 8px;font:inherit;background:var(--bg)}
+.uem{font-size:.74rem;margin-top:2px}
+.macts{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;border-top:1px solid var(--line);padding-top:8px}
+.link{border:0;background:none;color:var(--muted);font:inherit;font-size:.82rem;padding:6px 2px;min-height:36px}
