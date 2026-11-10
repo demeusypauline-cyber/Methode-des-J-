@@ -132,6 +132,19 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'OK  ' : 'FAIL') + ' ' + 
     const tx = await p.locator('#exoList .card').first().innerText(), want = new Date(Date.now() + 25 * 864e5).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
     ok(tx.includes(want), `niveau 5 en mode examen : revu à J-5 de l'examen (${want})`); await p.close();
   }
+
+  // niveau 6 : révision compressée après l'examen → révision normale gardée ; égalité exacte avec le jour de l'examen → idem
+  for (const c of [
+    { nom: 'niveau 6, compressée à I+49 > examen I+40 → normale I+70', ev: -5, ex: 35, pas: 20, want: 65 },
+    { nom: 'niveau 6 (pas 50 j), compressée pile le jour de l’examen → normale I+100', ev: -1, ex: 1, pas: 50, want: 99 }]) {
+    const p = await b.newPage({ viewport: { width: 412, height: 860 } });
+    const sd = { mats: [{ semestre: 'S1', nom: 'A', examen: iso(c.ex) }], ex: [{ id: 'g1', semestre: 'S1', matiere: 'A', intitule: 'Z', succes: 5, evalue: iso(c.ev) }],
+      hist: [{ id: 'g1', ts: 1, jour: iso(c.ev - 50), avant: { succes: 4, evalue: iso(c.ev - 60) }, niveau: 5, m: 5 }, { id: 'g1', ts: 2, jour: iso(c.ev), avant: { succes: 5, evalue: iso(c.ev - 50) }, niveau: 5, m: 5 }], reglages: { pasApres5: c.pas } };
+    await p.addInitScript(s => { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', 1); localStorage.clear(); localStorage.setItem('mes-exercices-v1', s); sessionStorage.setItem('mes-exercices-sess', '1'); localStorage.setItem('mes-exercices-onglet', 'exos'); } }, JSON.stringify(sd));
+    await p.goto('http://localhost:8765/'); await p.waitForTimeout(400);
+    const tx = await p.locator('#exoList .card').first().innerText(), want = new Date(Date.now() + c.want * 864e5).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    ok(tx.includes(want) && tx.startsWith('6'), `${c.nom} (${want})`); await p.close();
+  }
   // premier lancement
   const p = await b.newPage({ viewport: { width: 412, height: 860 } }); await p.goto('http://localhost:8765/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(300);
   ok(await p.locator('.welcome').count() === 1, 'premier lancement : carte d’accueil');
