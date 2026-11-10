@@ -348,6 +348,7 @@
     if (p) PREVK.forEach(function (k) { if (k in p) x[k] = p[k]; else delete x[k]; });
     else { x.succes = Math.min(5, h.avant.succes); if (h.avant.evalue) x.evalue = h.avant.evalue; else x.ajoute = true; } /* ancienne ligne sans état complet : on garde la date */
     data.hist = data.hist.filter(function (z) { return z !== h; });
+    if (h.chrono) { var a = chGetAll(); if (!a[h.id]) { a[h.id] = h.chrono; chSetAll(a); } } /* minuteur d'avant la note, sauf s'il a été relancé depuis */
   }
   function histBlock() {
     var lim = Date.now() - 7 * DAY; data.corbeille = (data.corbeille || []).filter(function (c) { return c && c.ex && c.ts > lim; });
@@ -1292,8 +1293,8 @@
     NIV.forEach(function (n, i) {
       var bt = el('button', '', String(i)); bt.type = 'button'; bt.appendChild(el('small', '', n)); var dj = revisionIf(x, i) - TODAY(); bt.appendChild(el('em', 'nxt', dj === 1 ? 'demain' : 'dans ' + dj + ' j'));
       bt.addEventListener('click', function () {
-        var ca = chGetAll(), ch0 = ca[x.id]; delete ca[x.id]; chSetAll(ca); var h = addHist(x, i); x.succes = i; if (i < 5) x.p5 = 0; x.evalue = todayISO(); h.apres = {}; PREVK.forEach(function (k) { if (k in x) h.apres[k] = x[k]; }); save(); $('doneDlg').close(); render();
-        toast('Prochaine révision : ' + fromNum(revision(x)), function () { if (!canUndo(h)) { toast('L’exo a changé depuis : annulation impossible.'); return; } undoHist(h); if (ch0) { var a = chGetAll(); a[x.id] = ch0; chSetAll(a); } save(); render(); toast('Note annulée.'); });
+        var ca = chGetAll(), ch0 = ca[x.id]; delete ca[x.id]; chSetAll(ca); var h = addHist(x, i); if (ch0) h.chrono = ch0; x.succes = i; if (i < 5) x.p5 = 0; x.evalue = todayISO(); h.apres = {}; PREVK.forEach(function (k) { if (k in x) h.apres[k] = x[k]; }); save(); $('doneDlg').close(); render();
+        toast('Prochaine révision : ' + fromNum(revision(x)), function () { if (!canUndo(h)) { toast('L’exo a changé depuis : annulation impossible.'); return; } undoHist(h); save(); render(); toast('Note annulée.'); });
       });
       b.appendChild(bt);
     });
