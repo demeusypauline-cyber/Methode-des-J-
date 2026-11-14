@@ -946,17 +946,22 @@
     var bl = []; v.forEach(function (x, i) { bl.push({ s: x * w[i], w: w[i], n: 1 }); while (bl.length > 1 && bl[bl.length - 2].s / bl[bl.length - 2].w < bl[bl.length - 1].s / bl[bl.length - 1].w) { var q = bl.pop(), p = bl[bl.length - 1]; p.s += q.s; p.w += q.w; p.n += q.n; } });
     var out = []; bl.forEach(function (b) { for (var k = 0; k < b.n; k++) out.push(b.s / b.w); }); return out;
   }
+  /* LA courbe d'un niveau : une exponentielle décroissante (Ebbinghaus), note = A · e^(−x/τ), ajustée sur tous ses points.
+     x = jours depuis la révision précédente (6+ : jours depuis la date prévue + intervalle d'un 5). A (hauteur) et τ (étirement) sont choisis
+     par moindres carrés, avec deux repères qui comptent comme deux points : 5 juste après la révision, et niveau + 1 au jour prévu. */
   function curveArr(sel) {
     var D = decay(); D.ca = D.ca || {}; if (D.ca[sel]) return D.ca[sel];
-    var big = sel === 6, lo = big ? -150 : 0, hi = 220, v = [], w = [];
-    var MD = D.lv[sel] || (big ? { a: 6, a0: 5, I: 0, tau: Infinity } : { a: sel, a0: Math.min(5, sel + 1), I: interval(sel), tau: Infinity });
-        var Q = D.P.filter(function (p) { return big ? p.a > 5 : p.a === sel; }); /* courbe d'un niveau : tous ses points (roses et gris) ; seule la vue « Tous » se limite aux roses */
-    for (var d = lo; d <= hi; d++) {
-      var sw = 0, sv = 0; Q.forEach(function (p) { var z = ((big ? p.rel : p.g) - d) / 7, wt = Math.exp(-z * z / 2); sw += wt; sv += wt * p.n; });
-      var ev = Math.min(5, big ? decayAt(MD, Math.max(0, d)) : modelNote(MD, d)), k = Math.min(1, sw / 3);
-      v.push(Math.max(0, Math.min(5, sw > 0 ? k * (sv / sw) + (1 - k) * ev : ev))); w.push(Math.max(0.05, sw));
+    var big = sel === 6, lo = big ? -150 : 0, hi = 220, I5 = interval(5), I = big ? I5 : interval(sel);
+    function xOf(d) { return big ? Math.max(0, d + I5) : Math.max(0, d); }
+    var Q = D.P.filter(function (p) { return big ? p.a > 5 : p.a === sel; }).map(function (p) { return { x: xOf(big ? p.rel : p.g), n: p.n }; });
+    Q.push({ x: 0, n: 5 }, { x: I, n: Math.min(5, big ? 5 : sel + 1) });
+    var best = 1e18, A = 5, tau = 1e4;
+    for (var a = 0.5; a <= 5.0001; a += 0.05) for (var T = 1; T <= 5000; T = Math.ceil(T * 1.08)) {
+      var e = 0; for (var q = 0; q < Q.length; q++) { var r = Q[q].n - a * Math.exp(-Q[q].x / T); e += r * r; }
+      if (e < best) { best = e; A = a; tau = T; }
     }
-    return (D.ca[sel] = { lo: lo, hi: hi, v: pava(v, w), tau: MD.tau });
+    var v = []; for (var d = lo; d <= hi; d++) v.push(Math.max(0, Math.min(5, A * Math.exp(-xOf(d) / tau))));
+    return (D.ca[sel] = { lo: lo, hi: hi, v: v, tau: tau, A: A });
   }
   /* au-delà du dernier jour calculé, la baisse continue selon le modèle (pas de plateau) ; sans baisse mesurée (τ infini), la valeur reste constante */
   function curveAt(sel, d) { var A = curveArr(sel); d = Math.round(d); if (d > A.hi) { var e = A.v[A.v.length - 1]; return isFinite(A.tau) ? e * Math.exp(-(d - A.hi) / A.tau) : e; } d = Math.max(A.lo, d); return A.v[d - A.lo]; }
@@ -1157,7 +1162,7 @@
     sec('Précisions (version 179)', ['Une révision n’est jamais prévue le jour même : au plus tôt le lendemain.', 'Une fois l’examen passé, l’exo revient aux intervalles normaux ; après la dernière révision d’avant examen, la suivante reprend le rythme normal.', 'Le jour de l’examen, les exos de la matière ne sont pas proposés.', '« Annuler » (dans le message qui suit une note, une suppression, un report ou une remise à zéro du minuteur, ou dans l’historique) remet l’exo exactement comme avant. Seule la dernière note d’un exo s’annule, et seulement s’il n’a pas changé depuis.', 'Une matière ne se supprime que si aucun exercice n’y est rattaché (corbeille comprise). Un semestre disparaît avec sa dernière matière.']);
     sec('Reporter', ['La flèche écarte un exo d’aujourd’hui : il ne prend plus de temps dans ton budget, mais sa date de révision ne change pas. Il revient demain.']);
     sec('Note effective (retard)', ['Un exo en retard perd de sa valeur : sa note affichée ne change pas, mais sa note effective baisse (elle peut avoir une virgule). Elle sert dans « Moyenne par matière » et dans les examens.', 'Elle se lit directement sur la courbe de l’oubli du niveau (filtre du niveau) : au croisement du jour (date prévue + retard), la note lue, sans jamais dépasser le niveau inscrit. Pour 6+, la baisse lue sur la courbe 6+ est retirée du niveau.', 'Cette règle est ' + (R.baisseOff ? 'désactivée' : 'activée') + ' (réglage dans Niveaux).']);
-    sec('Courbe de l’oubli', ['Chaque révision est un point, placé au nombre de jours réellement écoulés depuis la précédente. Rose : faite à ±20 % du J prévu pour son niveau, avec au moins 1 j de marge (donc ±1 j pour J2 et J4). Gris : en retard ou trop en avance. La courbe d’un niveau passe par tous ses points, roses et gris ; la vue « Tous » ne prend que les roses. La baisse continue au-delà de 220 j de retard selon le même modèle.', 'La courbe est pleine là où assez de tes points l’appuient, en pointillés là où elle est estimée faute de données (à la date prévue d’un niveau, la note attendue est ce niveau + 1). Elle ne remonte jamais avec le temps : une bosse de tes points est lissée en moyenne avec le creux qui suit.', 'Le filtre « 6+ » regroupe les niveaux au-dessus de 5, comptés depuis leur date prévue ; un 6 ou plus refait avant 50 j va dans le filtre 5, à son vrai nombre de jours.']);
+    sec('Courbe de l’oubli', ['Chaque révision est un point : en abscisse les jours écoulés depuis la précédente, en ordonnée la note obtenue. Rose : faite à ±20 % du J prévu (au moins 1 j de marge). Gris : en retard ou trop en avance.', 'La courbe d’un niveau est toujours une exponentielle décroissante (comme celle d’Ebbinghaus) : note = A · e^(−jours/τ). Sa hauteur A et son étirement τ sont ajustés sur tous les points du niveau, avec deux repères comptés comme deux points : 5 juste après la révision, et niveau + 1 au jour prévu. Plus tu as de points, plus ils comptent face aux repères.', 'La vue « Tous » montre la moyenne lissée des seuls points roses, tous niveaux confondus. Le filtre « 6+ » regroupe les niveaux au-dessus de 5, comptés depuis leur date prévue.']);
     sec('Prévisions de charge', ['Chaque exo prévu est rejoué dans le futur : à la date prévue il est supposé refait, et sa note prévue est lue sur la courbe de l’oubli de son niveau (celle affichée), au nombre de jours écoulés depuis la révision précédente.', 'La date de rattrapage est le dernier jour où il reste du retard dans les prévisions.']);
     sec('Exercices « Ajouté »', ['Un exo ajouté sans note n’écrit rien dans l’historique. Sa révision est toujours aujourd’hui, avec la priorité la plus basse (comme un 3 prévu). Il est gris dans les anneaux et ne compte pas dans les moyennes. Sa première révision lui donne sa vraie note.']);
     sec('Minuteur et série', ['Le minuteur décompte le temps prévu de l’exo : vert tant que tu es dans les temps, rouge au-delà (« +3:12 ») sans s’arrêter. Le temps total est repris quand tu valides.', 'La flamme 🔥 compte les jours de suite avec au moins une révision.']);
@@ -1676,7 +1681,7 @@
   $('examBack').addEventListener('click', function () { $('examDlg').close(); });
   $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
   $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; data.reglages.matieres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 193'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 194'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('dataBtn').addEventListener('click', function () { $('menu').close(); view = 'set'; setTab = 'donnees'; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } window._top = 1; render(); window.scrollTo(0, 0); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
