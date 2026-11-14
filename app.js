@@ -320,7 +320,7 @@
   }
   /* tous les exos du jour faits : félicitations écrites à la main, avec un bouquet dessiné */
   var BRAVO = ['Bravo, tout est fait pour aujourd’hui !', 'Journée réussie, bravo !', 'Tout est révisé, tu peux être fière de toi !', 'Mission du jour accomplie !'];
-  function bravoCard() {
+  function bravoCard(txt) {
     var c = el('div', 'card bravo'), f = '<path d="M0 -9C5 -9 6 -3 0 0C-6 -3 -5 -9 0 -9Z"/>';
     function fl(x, y, r, s, col) { var p = ''; for (var i = 0; i < 5; i++) p += '<g transform="rotate(' + (i * 72) + ')">' + f + '</g>'; return '<g transform="translate(' + x + ' ' + y + ') rotate(' + r + ') scale(' + s + ')" fill="' + col + '">' + p + '<circle r="2.6" fill="#fff6d8"/></g>'; }
     var art = el('div', 'bart'); art.setAttribute('aria-hidden', 'true');
@@ -331,7 +331,7 @@
       + '<g fill="#f6c94c"><path d="M40 30l2 6 6 2-6 2-2 6-2-6-6-2 6-2Z"/><path d="M182 24l1.5 4.5 4.5 1.5-4.5 1.5-1.5 4.5-1.5-4.5-4.5-1.5 4.5-1.5Z"/><path d="M190 80l1.2 3.6 3.6 1.2-3.6 1.2-1.2 3.6-1.2-3.6-3.6-1.2 3.6-1.2Z"/></g>'
       + '<g fill="#f08ab0" opacity=".7"><circle cx="30" cy="78" r="2.5"/><circle cx="58" cy="18" r="2"/><circle cx="168" cy="100" r="2"/></g></svg>';
     c.appendChild(art);
-    c.appendChild(el('p', 'btxt', BRAVO[TODAY() % BRAVO.length]));
+    c.appendChild(el('p', 'btxt', txt || BRAVO[TODAY() % BRAVO.length]));
     return c;
   }
   function renderToday() {
@@ -348,7 +348,8 @@
     box.appendChild(head);
     var inP = P.list.filter(function (o) { return o.in; }), out = P.list.filter(function (o) { return !o.in && !o.rep; }), reps = P.list.filter(function (o) { return o.rep; });
     if (!data.ex.length && !data.mats.length) box.appendChild(welcomeCard());
-    else if (!inP.length && !out.length && P.fait > 0) box.appendChild(bravoCard());
+    else if (!inP.length && P.budget === 0) { box.appendChild(bravoCard('Jour de repos, profites-en !')); if (out.length) box.appendChild(el('p', 'muted', out.length + ' exercice' + (out.length > 1 ? 's attendent' : ' attend') + ' dans « Reportés à demain ou après ».')); } /* budget à 0 : journée de repos */
+    else if (!inP.length && P.fait > 0) { box.appendChild(bravoCard()); if (out.length) box.appendChild(el('p', 'muted', out.length + ' exercice' + (out.length > 1 ? 's attendent' : ' attend') + ' dans « Reportés à demain ou après ».')); } /* budget du jour fait : félicitations */
     else if (!inP.length) box.appendChild(el('p', 'muted', !data.ex.length ? 'Aucun exercice. Ajoute-en avec le bouton + (onglet Exos).' : out.length ? 'Ton budget du jour est déjà rempli : ' + out.length + ' exercice' + (out.length > 1 ? 's attendent' : ' attend') + ' dans « Reportés à demain ou après ».' : reps.length ? 'Plus rien aujourd’hui : tu as reporté ' + reps.length + ' exercice' + (reps.length > 1 ? 's' : '') + '.' : 'Rien à faire aujourd’hui. Bravo !'));
     inP.forEach(function (o) { box.appendChild(exoCard(o, true)); });
     if (out.length) {
@@ -1675,7 +1676,7 @@
   $('examBack').addEventListener('click', function () { $('examDlg').close(); });
   $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
   $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; data.reglages.matieres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 192'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 193'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('dataBtn').addEventListener('click', function () { $('menu').close(); view = 'set'; setTab = 'donnees'; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } window._top = 1; render(); window.scrollTo(0, 0); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });

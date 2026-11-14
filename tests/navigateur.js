@@ -153,7 +153,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'OK  ' : 'FAIL') + ' ' + 
     const sd = { mats: [{ semestre: 'S', nom: 'A' }], ex, hist: [{ id: 'h0', ts: 0, jour: iso(0), avant: { succes: 1, evalue: iso(-12) }, niveau: 1, m: 60 }], reglages: { planning: [60, 60, 60, 60, 60, 60, 60] } };
     await p.addInitScript(s => { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', 1); localStorage.clear(); localStorage.setItem('mes-exercices-v1', s); sessionStorage.setItem('mes-exercices-sess', '1'); localStorage.setItem('mes-exercices-onglet', 'today'); } }, JSON.stringify(sd));
     await p.goto('http://localhost:8765/'); await p.waitForTimeout(400);
-    ok((await p.locator('#v-today > p.muted').innerText()).includes('budget du jour est déjà rempli'), 'À faire : budget rempli, pas de « Bravo »');
+    ok(await p.locator('.card.bravo').count() === 1 && (await p.locator('#v-today > p.muted').innerText()).includes('attendent'), 'À faire : budget du jour fait → félicitations + exos reportés signalés');
     await p.click('#menuBtn'); ok(!(await p.locator('#importSheet').isVisible()) && !(await p.locator('#exportBtn').isVisible()) && await p.locator('#syncBtn').isVisible(), 'menu : synchro seule, plus de doublons');
     await p.click('#dataBtn'); await p.waitForTimeout(200); ok((await p.locator('#v-set').innerText()).includes('Exporter mes données'), 'menu → Réglages › Données');
     await p.click('#tabs button[data-view=dash]'); await p.waitForTimeout(300);
