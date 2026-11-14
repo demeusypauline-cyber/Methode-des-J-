@@ -647,3 +647,5 @@ details.muez>summary{padding:8px 0;font-size:.86rem;color:var(--muted);cursor:po
 .mpen.on{background:var(--bord);color:#fff;border-color:var(--bord)}
 .medit{border-top:1px solid var(--line);margin-top:10px;padding-top:2px}
 .dlink{color:var(--warn)!important}
+.medit .mnom{display:block;margin:8px 0 0;font-size:.72rem;color:var(--muted)}
+.medit .mnom input{display:block;width:100%;box-sizing:border-box;height:40px;border:1px solid var(--line);border-radius:10px;padding:0 10px;font:inherit;font-size:.9rem;background:#fff;margin-top:3px;color:var(--ink)}

@@ -69,7 +69,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'OK  ' : 'FAIL') + ' ' + 
     ok(await hrow.locator('button', { hasText: 'Annuler' }).count() === 0 && (await D()).ex.find(x => x.id === 'a1').minutes === 17, `${w} annulation refusée après changement de durée`);
     // audit 2 : filtre sur deux matières, renommage de l'une → les deux restent sélectionnées
     await p.evaluate(() => { const d = JSON.parse(localStorage.getItem('mes-exercices-v1')); d.reglages.matieres = ['physique', 'maths']; localStorage.setItem('mes-exercices-v1', JSON.stringify(d)); }); await p.reload(); await p.waitForTimeout(300);
-    await p.click('#tabs button[data-view=mats]'); await p.locator('.stab', { hasText: 'S7' }).click(); await p.waitForTimeout(100); await p.locator('.mcard2', { hasText: 'Physique' }).locator('.mpen').click(); await p.locator('.mcard2', { hasText: 'Physique' }).locator('.macts .link').first().click(); await p.fill('#askI', 'Physique II'); await p.click('#askOk'); await p.waitForTimeout(100);
+    await p.click('#tabs button[data-view=mats]'); await p.locator('.stab', { hasText: 'S7' }).click(); await p.waitForTimeout(100); await p.locator('.mcard2', { hasText: 'Physique' }).locator('.mpen').click(); await p.locator('.medit .mnom input').fill('Physique II'); await p.locator('.medit .mnom input').dispatchEvent('change'); await p.waitForTimeout(100);
     const fm = (await D()).reglages.matieres; ok(fm.includes('physique ii') && fm.includes('maths'), `${w} filtre conservé après renommage (${fm})`);
     await p.evaluate(() => { const d = JSON.parse(localStorage.getItem('mes-exercices-v1')); d.reglages.matieres = []; localStorage.setItem('mes-exercices-v1', JSON.stringify(d)); }); await p.reload(); await p.waitForTimeout(300);
 

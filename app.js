@@ -455,12 +455,14 @@
   }
   function matTaken(sem, n, self) { return data.mats.some(function (z) { return z !== self && z.semestre === sem && norm(z.nom).trim() === norm(n).trim(); }); }
   function renameMat(m) {
-    ask({ t: 'Renommer la matière', v: m.nom, ok: 'Renommer' }, function (n) {
-      n = n.trim(); if (!n || n === m.nom) return;
-      if (matTaken(m.semestre, n, m)) { toast('« ' + n + ' » existe déjà dans ' + m.semestre + '.'); return; }
-      if (examSel && examSel.semestre === m.semestre && examSel.nom === m.nom) examSel.nom = n;
-      doRen({ k: 'mat', s: m.semestre, de: m.nom, a: n }); save(); render(); toast('Matière renommée.');
-    });
+    ask({ t: 'Renommer la matière', v: m.nom, ok: 'Renommer' }, function (n) { setMatName(m, n); });
+  }
+  function setMatName(m, n) {
+    n = String(n || '').trim(); if (!n || n === m.nom) return false;
+    if (matTaken(m.semestre, n, m)) { toast('« ' + n + ' » existe déjà dans ' + m.semestre + '.'); return false; }
+    if (examSel && examSel.semestre === m.semestre && examSel.nom === m.nom) examSel.nom = n;
+    var k0 = m.semestre + '|' + m.nom; if (MEDIT[k0]) { delete MEDIT[k0]; MEDIT[m.semestre + '|' + n] = true; }
+    doRen({ k: 'mat', s: m.semestre, de: m.nom, a: n }); save(); render(); toast('Matière renommée.'); return true;
   }
   /* suppression seulement si aucun exercice (actif ou en corbeille) ; le semestre disparaît avec sa dernière matière */
   function deleteMat(m) {
@@ -539,7 +541,7 @@
         set(v);
       });
       l1.appendChild(inp); l2.appendChild(nt); l3.appendChild(us); g.appendChild(l1); g.appendChild(l2); g.appendChild(l3);
-      if (ed) { var pe = el('div', 'medit'); pe.appendChild(g); var ra = el('div', 'macts'); ra.appendChild(plainBtn('Renommer', function () { renameMat(m); }, 'link')); ra.appendChild(plainBtn('Supprimer', function () { deleteMat(m); }, 'link dlink')); pe.appendChild(ra); c.appendChild(pe); } /* modification derrière le crayon */
+      if (ed) { var pe = el('div', 'medit'), ln = el('label', 'mnom', 'Nom'), ni = document.createElement('input'); ni.value = m.nom; ni.autocomplete = 'off'; ni.addEventListener('change', function () { if (!setMatName(m, ni.value)) ni.value = m.nom; }); ln.appendChild(ni); pe.appendChild(ln); pe.appendChild(g); var ra = el('div', 'macts'); ra.appendChild(plainBtn('Supprimer', function () { deleteMat(m); }, 'link dlink')); pe.appendChild(ra); c.appendChild(pe); } /* modification derrière le crayon */
       return c;
     }
     /* blocs par UE (dans la période), puis les matières sans UE */
@@ -1670,7 +1672,7 @@
   $('examBack').addEventListener('click', function () { $('examDlg').close(); });
   $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
   $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; data.reglages.matieres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 188'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 189'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('dataBtn').addEventListener('click', function () { $('menu').close(); view = 'set'; setTab = 'donnees'; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } window._top = 1; render(); window.scrollTo(0, 0); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
