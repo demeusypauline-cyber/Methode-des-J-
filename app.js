@@ -908,7 +908,7 @@
   /* modèle : note attendue = a0 · e^(−(retard)/τ) ; τ ajusté sur les points en retard. Niveaux 0 à 5 : chacun le sien ; indice 6 = tous les niveaux au-dessus de 5, comptés depuis le jour prévu */
   function fitDecay(Q, a, gOf, I) {
     if (Q.length < MINPTS) return null;
-    var pk = Q.filter(function (p) { return p.pink; }), lt = Q.filter(function (p) { return p.rel >= -p.tol; }), a0 = Math.max(0.3, pk.length >= 2 ? mean(pk.map(function (p) { return p.n; })) : Math.min(5, a + 1)), tau = Infinity;
+    var pk = Q.filter(function (p) { return p.pink; }), lt = Q.filter(function (p) { return p.rel >= -p.tol; }), a0 = Math.max(0.3, pk.length >= 2 ? mean(pk.map(function (p) { return p.n; })) : lt.length ? Math.min(5, mean(lt.map(function (p) { return p.n; }))) : Math.min(5, a + 1)) /* peu de points roses : la note de départ vient de tes révisions, pas d'une valeur par défaut */, tau = Infinity;
     if (lt.length >= 3) {
       var best = 1e18; for (var T = 2; T <= 600; T = Math.ceil(T * 1.12)) {
         var e = 0; lt.forEach(function (p) { var d = p.n - a0 * Math.exp(-(gOf(p) - I) / T); e += d * d; });
@@ -997,10 +997,11 @@
     if (MODEL < 0 && pts.length > 1) { var mono = pava(pts.map(function (p) { return p.y; }), pts.map(function () { return 1; })); pts.forEach(function (p, i) { p.y = mono[i]; }); }
     if (pts.length > 1) {
       var runs = [], cur = [pts[0]]; for (var i = 1; i < pts.length; i++) { if (pts[i].pink !== pts[i - 1].pink || pts[i].x - pts[i - 1].x > 1) { cur.push(pts[i]); runs.push(cur); cur = [pts[i]]; } else cur.push(pts[i]); } runs.push(cur);
+      /* un seul dégradé uniforme sous toute la courbe (traits pleins ou pointillés seulement) */
+      if (pts.length > 1) { g.beginPath(); pts.forEach(function (p, i) { if (i) g.lineTo(X(p.x), Y(p.y)); else g.moveTo(X(p.x), Y(p.y)); }); g.lineTo(X(pts[pts.length - 1].x), B); g.lineTo(X(pts[0].x), B); g.closePath();
+        var gr = g.createLinearGradient(0, Y(5), 0, B); gr.addColorStop(0, 'rgba(248,83,139,.42)'); gr.addColorStop(.6, 'rgba(248,83,139,.14)'); gr.addColorStop(1, 'rgba(248,83,139,0)'); g.fillStyle = gr; g.fill(); }
       runs.forEach(function (run) {
         if (run.length < 2) return; var pk = run[0].pink;
-        g.beginPath(); run.forEach(function (p, i) { if (i) g.lineTo(X(p.x), Y(p.y)); else g.moveTo(X(p.x), Y(p.y)); });
-        g.lineTo(X(run[run.length - 1].x), B); g.lineTo(X(run[0].x), B); g.closePath(); var topY = B; run.forEach(function (p) { topY = Math.min(topY, Y(p.y)); }); var gr = g.createLinearGradient(0, topY, 0, B), k = pk ? 1 : .55; gr.addColorStop(0, 'rgba(248,83,139,' + (.5 * k) + ')'); gr.addColorStop(.6, 'rgba(248,83,139,' + (.16 * k) + ')'); gr.addColorStop(1, 'rgba(248,83,139,0)'); g.fillStyle = gr; g.fill();
         g.strokeStyle = '#ad1457'; g.lineWidth = 3; g.lineJoin = 'round'; g.lineCap = 'round'; g.setLineDash(pk ? [] : [7, 6]); g.beginPath(); run.forEach(function (p, i) { if (i) g.lineTo(X(p.x), Y(p.y)); else g.moveTo(X(p.x), Y(p.y)); }); g.stroke(); g.setLineDash([]);
       });
     }
@@ -1667,7 +1668,7 @@
   $('examBack').addEventListener('click', function () { $('examDlg').close(); });
   $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
   $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; data.reglages.matieres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 185'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 186'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('dataBtn').addEventListener('click', function () { $('menu').close(); view = 'set'; setTab = 'donnees'; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } window._top = 1; render(); window.scrollTo(0, 0); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
