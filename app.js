@@ -576,7 +576,7 @@
   }
 
   /* ---------- vue : tableau de bord ---------- */
-  var C_LATE = '#ad1457', C_EXAM = '#f1b3c6', C_NORM = '#f8538b', C_PV = '#838383', C_PVL = '#3f3f3f';
+  var C_LATE = '#ad1457', C_EXAM = '#f1b3c6', C_NORM = '#f8538b', C_PV = '#838383', C_PVL = '#3f3f3f', C_AV = '#f3a6c3', C_AVP = '#bdbdbd'; /* exo avancé (avant sa date prévue) : rose clair ; en prévision : gris clair */
   var C_NIV = [0, 1, 2, 3, 4, 5].map(function (v) { return scale(v); });
   var JS = ['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam'];
   function dcard(title, extra) { var c = el('div', 'dcard' + (extra ? ' ' + extra : '')); if (title) c.appendChild(el('h2', '', title)); return c; }
@@ -665,7 +665,7 @@
     /* charge */
     var c1 = dcard('Charge de révision à venir');
     var lg = el('div', 'legend');
-    [['En retard', C_LATE], ['Prévu', C_NORM], ['Examen (vagues)', 'hatch']].concat(!data.reglages.prevOff ? [['En retard (prévision)', C_PVL], ['Prévu (prévision)', C_PV], ['Examen (prévision)', 'hatchg']] : []).forEach(function (a) { var sp = el('span'); var i = el('i'); if (a[1] === 'hatch') i.className = 'hat'; else if (a[1] === 'hatchg') i.className = 'hat hg'; else if (a[1] === 'tick') i.className = 'tick'; else i.style.background = a[1]; sp.appendChild(i); sp.appendChild(document.createTextNode(a[0])); lg.appendChild(sp); });
+    [['En retard', C_LATE], ['Prévu', C_NORM], ['Avancé', C_AV], ['Examen (vagues)', 'hatch']].concat(!data.reglages.prevOff ? [['En retard (prévision)', C_PVL], ['Prévu (prévision)', C_PV], ['Avancé (prévision)', C_AVP], ['Examen (prévision)', 'hatchg']] : []).forEach(function (a) { var sp = el('span'); var i = el('i'); if (a[1] === 'hatch') i.className = 'hat'; else if (a[1] === 'hatchg') i.className = 'hat hg'; else if (a[1] === 'tick') i.className = 'tick'; else i.style.background = a[1]; sp.appendChild(i); sp.appendChild(document.createTextNode(a[0])); lg.appendChild(sp); });
     c1.appendChild(lg);
     {
       var sg = el('div', 'seg'); [[false, 'Sans prévisions'], [true, 'Avec prévisions']].forEach(function (o) {
@@ -1021,7 +1021,7 @@
   }
   function expectNote(pl, gap) { return pl > 5 ? curveAt(6, gap - interval(pl)) : curveAt(pl, gap); }
   function drawCharge(cv, L, t, ax, extra, noDraw, opt) {
-    opt = opt || {}; var N = opt.N || 42, LOG = [], late = [], lateEx = [], ex = [], nm = [], pv = [], pvL = [], pvE = [], pvLE = [], cnt = []; for (var i = 0; i < N; i++) { late.push(0); lateEx.push(0); ex.push(0); nm.push(0); pv.push(0); pvL.push(0); pvE.push(0); pvLE.push(0); cnt.push(0); }
+    opt = opt || {}; var N = opt.N || 42, LOG = [], av = [], avP = [], late = [], lateEx = [], ex = [], nm = [], pv = [], pvL = [], pvE = [], pvLE = [], cnt = []; for (var i = 0; i < N; i++) { av.push(0); avP.push(0); late.push(0); lateEx.push(0); ex.push(0); nm.push(0); pv.push(0); pvL.push(0); pvE.push(0); pvLE.push(0); cnt.push(0); }
     var RET = !data.reglages.prevOff || !!opt.all, vc = 0; SIML = {}; DEFC = null;
     var cand = [];
     data.ex.forEach(function (x, i) { if ((opt.all || visible(x)) && x.evalue) cand.push({ x: x, r: revision(x), ex: modeExam(x), i: i, m: mins(x) }); });
@@ -1047,7 +1047,8 @@
             SIML[ox.id].r = r2; if (r2 < t + N) cand.push({ v: true, x: ox, L: nl, ev: t + d, r: r2, ex: lb ? false : examAt(ox, t + d), i: 'v' + (vc++), m: o.m });
           }
         }
-        if (o.v) { if (o.r < t + d) { if (o.ex) pvLE[d] += o.m; else pvL[d] += o.m; } else if (o.ex) pvE[d] += o.m; else pv[d] += o.m; } else if (o.r < t + d) { if (o.ex) lateEx[d] += o.m; else late[d] += o.m; } else if (o.ex) ex[d] += o.m; else nm[d] += o.m;
+        if (o.r >= t + d + 1) { if (o.v) avP[d] += o.m; else av[d] += o.m; } /* avancé depuis un jour suivant */
+        else if (o.v) { if (o.r < t + d) { if (o.ex) pvLE[d] += o.m; else pvL[d] += o.m; } else if (o.ex) pvE[d] += o.m; else pv[d] += o.m; } else if (o.r < t + d) { if (o.ex) lateEx[d] += o.m; else late[d] += o.m; } else if (o.ex) ex[d] += o.m; else nm[d] += o.m;
       };
       cand.forEach(function (o) {
         if (done[o.i] || o.r >= t + d + 1) return;
@@ -1071,7 +1072,7 @@
     var w = 4 + N * 40 + 4, h = 210, dpr = window.devicePixelRatio || 1;
     cv.width = w * dpr; cv.height = h * dpr; cv.style.height = h + 'px'; cv.style.width = w + 'px';
     var g = cv.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, w, h);
-    var tot = late.map(function (_, i) { return late[i] + lateEx[i] + ex[i] + nm[i] + pv[i] + pvL[i] + pvE[i] + pvLE[i]; }), mx = Math.max.apply(null, tot.concat([60]));
+    var tot = late.map(function (_, i) { return av[i] + avP[i] + late[i] + lateEx[i] + ex[i] + nm[i] + pv[i] + pvL[i] + pvE[i] + pvLE[i]; }), mx = Math.max.apply(null, tot.concat([60]));
     var step = 60; [60, 120, 240, 360, 480, 720, 1440].some(function (c) { step = c; return mx / c <= 6; }); mx = Math.ceil(mx / step) * step;
     var L0 = 4, B = h - 46, T = 8, bw = (w - L0 - 4) / N;
     function rr(x, y, w2, h2, r) { g.beginPath(); if (g.roundRect) g.roundRect(x, y, w2, h2, r); else g.rect(x, y, w2, h2); }
@@ -1089,7 +1090,7 @@
       var x0 = L0 + j * bw + bw * 0.16, ww = bw * 0.68, yy = B, th = (B - T) * tot[j] / mx * ANIM;
       if (th > 0) {
         g.save(); rr(x0, B - th, ww, th + 6, Math.min(6, ww / 2)); g.clip();
-        [[late[j], C_LATE, 0], [lateEx[j], C_LATE, 1], [nm[j], C_NORM, 0], [ex[j], C_NORM, 1], [pvL[j], C_PVL, 0], [pvLE[j], C_PVL, 2], [pvE[j], C_PV, 2], [pv[j], C_PV, 0]].forEach(function (s) {
+        [[late[j], C_LATE, 0], [lateEx[j], C_LATE, 1], [av[j], C_AV, 0], [nm[j], C_NORM, 0], [ex[j], C_NORM, 1], [pvL[j], C_PVL, 0], [pvLE[j], C_PVL, 2], [pvE[j], C_PV, 2], [pv[j], C_PV, 0], [avP[j], C_AVP, 0]].forEach(function (s) {
           if (!s[0]) return; var hh = (B - T) * s[0] / mx * ANIM; g.fillStyle = s[1]; g.fillRect(x0, yy - hh, ww, hh);
           if (s[2]) { g.save(); g.beginPath(); g.rect(x0, yy - hh, ww, hh); g.clip(); waves(g, x0, yy - hh, ww, hh, s[2] === 2 ? '#e1e1e1' : '#f9d3e0', 5, 1.6, 1.2); g.restore(); }
           g.fillStyle = 'rgba(255,255,255,.7)'; g.fillRect(x0, yy - hh, ww, 1);
@@ -1666,7 +1667,7 @@
   $('examBack').addEventListener('click', function () { $('examDlg').close(); });
   $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
   $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; data.reglages.matieres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 181'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 182'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('dataBtn').addEventListener('click', function () { $('menu').close(); view = 'set'; setTab = 'donnees'; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } window._top = 1; render(); window.scrollTo(0, 0); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
