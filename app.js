@@ -949,8 +949,7 @@
     var D = decay(); D.ca = D.ca || {}; if (D.ca[sel]) return D.ca[sel];
     var big = sel === 6, lo = big ? -150 : 0, hi = 220, v = [], w = [];
     var MD = D.lv[sel] || (big ? { a: 6, a0: 5, I: 0, tau: Infinity } : { a: sel, a0: Math.min(5, sel + 1), I: interval(sel), tau: Infinity });
-    /* moyenne lissée : seulement les points roses (révision proche du J prévu) ; les retards servent au modèle de baisse (fitDecay), les points très en avance à modelNote */
-    var Q = D.P.filter(function (p) { return (big ? p.a > 5 : p.a === sel) && p.pink; });
+        var Q = D.P.filter(function (p) { return big ? p.a > 5 : p.a === sel; }); /* courbe d'un niveau : tous ses points (roses et gris) ; seule la vue « Tous » se limite aux roses */
     for (var d = lo; d <= hi; d++) {
       var sw = 0, sv = 0; Q.forEach(function (p) { var z = ((big ? p.rel : p.g) - d) / 7, wt = Math.exp(-z * z / 2); sw += wt; sv += wt * p.n; });
       var ev = Math.min(5, big ? decayAt(MD, Math.max(0, d)) : modelNote(MD, d)), k = Math.min(1, sw / 3);
@@ -965,9 +964,9 @@
   function effLvl(x, D) { var L = lvl(x); return effAt(L, D === undefined ? lateDays(x) : Math.max(0, Math.floor(D - revision(x)))); }
   function effAt(L, late) {
     if (data.reglages.baisseOff || !late) return L;
-    var b = Math.min(5, L), base = L > 5 ? curveAt(6, 0) : curveAt(L, interval(L)), now = L > 5 ? curveAt(6, late) : curveAt(L, interval(L) + late);
-    var r = base > 0 ? Math.min(1, now / base) : 1;
-    return Math.round((b * r + (L - b)) * 10) / 10;
+    /* lecture directe : note lue sur la courbe du niveau au jour (J prévu + retard), sans jamais dépasser le niveau (seule une baisse compte) */
+    var v = L > 5 ? L - Math.max(0, curveAt(6, 0) - curveAt(6, late)) : Math.min(L, curveAt(L, interval(L) + late));
+    return Math.round(Math.max(0, v) * 10) / 10;
   }
   function drawOubli(cv) {
     var D = decay(), PA = D.P, sel = data.reglages.oubliNiv; sel = typeof sel === 'number' ? sel : -1;
@@ -1156,8 +1155,8 @@
     sec('Budget du jour et priorités', ['Budget par jour : ' + bud + '.', 'Les exos hors mode examen sont classés par date de révision la plus ancienne, puis niveau le plus bas. Ceux qui ne rentrent pas dans le budget attendent (un plus court peut passer devant).', 'Si le budget de demain est dépassé, ce qui y est prévu est d’abord avancé à aujourd’hui quand il reste de la place, avant d’être repoussé.', 'Sans limite : aujourd’hui, le temps affiché ne dépasse pas les heures qu’il reste jusqu’à demain, arrondies à l’heure du dessus (« Il reste X h ») ; les autres jours sans limite comptent au plus 24 h.']);
     sec('Précisions (version 179)', ['Une révision n’est jamais prévue le jour même : au plus tôt le lendemain.', 'Une fois l’examen passé, l’exo revient aux intervalles normaux ; après la dernière révision d’avant examen, la suivante reprend le rythme normal.', 'Le jour de l’examen, les exos de la matière ne sont pas proposés.', '« Annuler » (dans le message qui suit une note, une suppression, un report ou une remise à zéro du minuteur, ou dans l’historique) remet l’exo exactement comme avant. Seule la dernière note d’un exo s’annule, et seulement s’il n’a pas changé depuis.', 'Une matière ne se supprime que si aucun exercice n’y est rattaché (corbeille comprise). Un semestre disparaît avec sa dernière matière.']);
     sec('Reporter', ['La flèche écarte un exo d’aujourd’hui : il ne prend plus de temps dans ton budget, mais sa date de révision ne change pas. Il revient demain.']);
-    sec('Note effective (retard)', ['Un exo en retard perd de sa valeur : sa note affichée ne change pas, mais sa note effective baisse (elle peut avoir une virgule). Elle sert dans « Moyenne par matière » et dans les examens.', 'Elle vaut le niveau multiplié par la baisse lue sur la courbe de l’oubli de ce niveau, entre la date prévue et aujourd’hui. C’est exactement la courbe affichée (filtre du niveau).', 'Cette règle est ' + (R.baisseOff ? 'désactivée' : 'activée') + ' (réglage dans Niveaux).']);
-    sec('Courbe de l’oubli', ['Chaque révision est un point, placé au nombre de jours réellement écoulés depuis la précédente. Rose : faite à ±20 % du J prévu pour son niveau, avec au moins 1 j de marge (donc ±1 j pour J2 et J4). Gris : en retard ou trop en avance. Seuls les roses comptent dans la moyenne lissée ; les points en retard servent à mesurer la baisse due au retard, ceux trop en avance à estimer la note avant la date prévue. La baisse continue au-delà de 220 j de retard selon le même modèle.', 'La courbe est pleine là où assez de tes points l’appuient, en pointillés là où elle est estimée faute de données (à la date prévue d’un niveau, la note attendue est ce niveau + 1). Elle ne remonte jamais avec le temps : une bosse de tes points est lissée en moyenne avec le creux qui suit.', 'La vue « Tous » montre la moyenne des points roses de tous les niveaux ; la vue d’un niveau montre sa courbe complète (points roses et baisse estimée).', 'Le filtre « 6+ » regroupe les niveaux au-dessus de 5, comptés depuis leur date prévue ; un 6 ou plus refait avant 50 j va dans le filtre 5, à son vrai nombre de jours.']);
+    sec('Note effective (retard)', ['Un exo en retard perd de sa valeur : sa note affichée ne change pas, mais sa note effective baisse (elle peut avoir une virgule). Elle sert dans « Moyenne par matière » et dans les examens.', 'Elle se lit directement sur la courbe de l’oubli du niveau (filtre du niveau) : au croisement du jour (date prévue + retard), la note lue, sans jamais dépasser le niveau inscrit. Pour 6+, la baisse lue sur la courbe 6+ est retirée du niveau.', 'Cette règle est ' + (R.baisseOff ? 'désactivée' : 'activée') + ' (réglage dans Niveaux).']);
+    sec('Courbe de l’oubli', ['Chaque révision est un point, placé au nombre de jours réellement écoulés depuis la précédente. Rose : faite à ±20 % du J prévu pour son niveau, avec au moins 1 j de marge (donc ±1 j pour J2 et J4). Gris : en retard ou trop en avance. La courbe d’un niveau passe par tous ses points, roses et gris ; la vue « Tous » ne prend que les roses. La baisse continue au-delà de 220 j de retard selon le même modèle.', 'La courbe est pleine là où assez de tes points l’appuient, en pointillés là où elle est estimée faute de données (à la date prévue d’un niveau, la note attendue est ce niveau + 1). Elle ne remonte jamais avec le temps : une bosse de tes points est lissée en moyenne avec le creux qui suit.', 'Le filtre « 6+ » regroupe les niveaux au-dessus de 5, comptés depuis leur date prévue ; un 6 ou plus refait avant 50 j va dans le filtre 5, à son vrai nombre de jours.']);
     sec('Prévisions de charge', ['Chaque exo prévu est rejoué dans le futur : à la date prévue il est supposé refait, et sa note prévue est lue sur la courbe de l’oubli de son niveau (celle affichée), au nombre de jours écoulés depuis la révision précédente.', 'La date de rattrapage est le dernier jour où il reste du retard dans les prévisions.']);
     sec('Exercices « Ajouté »', ['Un exo ajouté sans note n’écrit rien dans l’historique. Sa révision est toujours aujourd’hui, avec la priorité la plus basse (comme un 3 prévu). Il est gris dans les anneaux et ne compte pas dans les moyennes. Sa première révision lui donne sa vraie note.']);
     sec('Minuteur et série', ['Le minuteur décompte le temps prévu de l’exo : vert tant que tu es dans les temps, rouge au-delà (« +3:12 ») sans s’arrêter. Le temps total est repris quand tu valides.', 'La flamme 🔥 compte les jours de suite avec au moins une révision.']);
@@ -1676,7 +1675,7 @@
   $('examBack').addEventListener('click', function () { $('examDlg').close(); });
   $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
   $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; data.reglages.matieres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 191'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 192'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('dataBtn').addEventListener('click', function () { $('menu').close(); view = 'set'; setTab = 'donnees'; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } window._top = 1; render(); window.scrollTo(0, 0); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
