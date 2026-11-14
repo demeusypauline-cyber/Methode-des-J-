@@ -679,10 +679,14 @@
     /* charge */
     var c1 = dcard('Charge de révision à venir');
     var lg = el('div', 'legend');
-    [['En retard', C_LATE], ['Prévu', C_NORM], ['Avancé', C_AV], ['Examen (vagues)', 'hatch']].concat(true ? [['En retard (prévision)', C_PVL], ['Prévu (prévision)', C_PV], ['Avancé (prévision)', C_AVP], ['Examen (prévision)', 'hatchg']] : []).concat(data.reglages.semestres.length || (data.reglages.matieres || []).length ? [['Autres matières (fantôme)', '#efe8eb']] : []).forEach(function (a) { var sp = el('span'); var i = el('i'); if (a[1] === 'hatch') i.className = 'hat'; else if (a[1] === 'hatchg') i.className = 'hat hg'; else if (a[1] === 'tick') i.className = 'tick'; else i.style.background = a[1]; sp.appendChild(i); sp.appendChild(document.createTextNode(a[0])); lg.appendChild(sp); });
+    [['En retard', C_LATE], ['Prévu', C_NORM], ['Avancé', C_AV], ['Examen (vagues)', 'hatch']].concat(true ? [['En retard (prévision)', C_PVL], ['Prévu (prévision)', C_PV], ['Avancé (prévision)', C_AVP], ['Examen (prévision)', 'hatchg']] : []).concat((data.reglages.semestres.length || (data.reglages.matieres || []).length) && !data.reglages.chargeSeul ? [['Autres matières (fantôme)', '#efe8eb']] : []).forEach(function (a) { var sp = el('span'); var i = el('i'); if (a[1] === 'hatch') i.className = 'hat'; else if (a[1] === 'hatchg') i.className = 'hat hg'; else if (a[1] === 'tick') i.className = 'tick'; else i.style.background = a[1]; sp.appendChild(i); sp.appendChild(document.createTextNode(a[0])); lg.appendChild(sp); });
     c1.appendChild(lg);
     {
-      /* toujours avec prévisions (bouton retiré) */
+      /* toujours avec prévisions (bouton retiré) ; avec un filtre : les autres matières en fantôme, ou ignorées */
+      if (data.reglages.semestres.length || (data.reglages.matieres || []).length) {
+        var sgF = el('div', 'seg'); [[false, 'Avec les autres matières'], [true, 'Matières filtrées seules']].forEach(function (o) { var b = el('button', !!data.reglages.chargeSeul === o[0] ? 'on' : '', o[1]); b.type = 'button'; b.addEventListener('click', function () { data.reglages.chargeSeul = o[0]; save(); renderDash(); }); sgF.appendChild(b); });
+        c1.insertBefore(sgF, lg);
+      }
     }
     lg.hidden = true;
     {
@@ -1023,7 +1027,7 @@
   function expectNote(pl, gap) { return pl > 5 ? curveAt(6, gap - interval(pl)) : curveAt(pl, gap); }
   function drawCharge(cv, L, t, ax, extra, noDraw, opt) {
     opt = opt || {}; var N = opt.N || 42, LOG = [], av = [], avP = [], late = [], lateEx = [], ex = [], nm = [], pv = [], pvL = [], pvE = [], pvLE = [], cnt = []; for (var i = 0; i < N; i++) { av.push(0); avP.push(0); late.push(0); lateEx.push(0); ex.push(0); nm.push(0); pv.push(0); pvL.push(0); pvE.push(0); pvLE.push(0); cnt.push(0); }
-    var RET = true, vc = 0, FIL = !opt.all && !!(data.reglages.semestres.length || (data.reglages.matieres || []).length), gh = []; for (var i2 = 0; i2 < N; i2++) gh.push(0); /* FIL : filtre actif → tout est simulé, les autres matières sont dessinées en fantôme */ SIML = {}; SIMG = {}; DEFC = null;
+    var RET = true, vc = 0, FIL = !opt.all && !data.reglages.chargeSeul && !!(data.reglages.semestres.length || (data.reglages.matieres || []).length), gh = []; for (var i2 = 0; i2 < N; i2++) gh.push(0); /* FIL : filtre actif → tout est simulé, les autres matières sont dessinées en fantôme */ SIML = {}; SIMG = {}; DEFC = null;
     var cand = [];
     data.ex.forEach(function (x, i) { if ((opt.all || FIL || visible(x)) && x.evalue) cand.push({ x: x, r: revision(x), ex: modeExam(x), i: i, m: mins(x) }); });
     function lvO(o) { return o.v ? o.L : prio(o.x); }
@@ -1672,7 +1676,7 @@
   $('examBack').addEventListener('click', function () { $('examDlg').close(); });
   $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
   $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; data.reglages.matieres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 189'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 190'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('dataBtn').addEventListener('click', function () { $('menu').close(); view = 'set'; setTab = 'donnees'; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } window._top = 1; render(); window.scrollTo(0, 0); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
