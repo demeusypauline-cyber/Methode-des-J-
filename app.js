@@ -763,20 +763,9 @@
       }
       box.appendChild(c);
     }
-    var TOP = ['charge', 'exam'];
-    if (dashEdit) ord.forEach(place);
-    else {
-      ord.filter(function (k) { return TOP.indexOf(k) >= 0; }).forEach(place);
-      if (half % 2 === 1 && lastHalf) lastHalf.classList.add('solo'); half = 0; lastHalf = null;
-      var rest = ord.filter(function (k) { return TOP.indexOf(k) < 0 && hid.indexOf(k) < 0; });
-      if (rest.length) {
-        var opn = !!OPEN.analyse, tg = el('button', 'row plain dana', (opn ? '▾ ' : '▸ ') + 'Analyse détaillée (' + rest.length + ')'); tg.type = 'button'; tg.setAttribute('aria-expanded', opn ? 'true' : 'false');
-        tg.addEventListener('click', function () { OPEN.analyse = !opn; try { localStorage.setItem('mes-exercices-replis', JSON.stringify(OPEN)); } catch (e) { /* ignoré */ } renderDash(); });
-        box.appendChild(tg); if (opn) rest.forEach(place);
-      }
-    }
+    ord.forEach(place); /* toutes les cartes affichées (repli « Analyse détaillée » retiré) */
     if (half % 2 === 1 && lastHalf) lastHalf.classList.add('solo');
-    function drawAll() { Object.keys(draws).forEach(function (k) { if (cards[k].parentNode === box) draws[k](); }); } /* les cartes repliées ne sont pas dessinées */
+    function drawAll() { Object.keys(draws).forEach(function (k) { if (cards[k].parentNode === box) draws[k](); }); }
     var sig = 0; try { var js = JSON.stringify(data.ex); for (var q = 0; q < js.length; q++) sig = (sig * 31 + js.charCodeAt(q)) | 0; } catch (e) { /* ignoré */ }
     var changed = lastSig !== null && sig !== lastSig; lastSig = sig; var tok = ++animTok;
     if (!changed) { ANIM = 1; drawAll(); return; }
@@ -1678,7 +1667,7 @@
   $('examBack').addEventListener('click', function () { $('examDlg').close(); });
   $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
   $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; data.reglages.matieres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 184'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 185'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('dataBtn').addEventListener('click', function () { $('menu').close(); view = 'set'; setTab = 'donnees'; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } window._top = 1; render(); window.scrollTo(0, 0); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });

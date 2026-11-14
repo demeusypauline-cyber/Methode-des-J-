@@ -157,8 +157,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'OK  ' : 'FAIL') + ' ' + 
     await p.click('#menuBtn'); ok(!(await p.locator('#importSheet').isVisible()) && !(await p.locator('#exportBtn').isVisible()) && await p.locator('#syncBtn').isVisible(), 'menu : synchro seule, plus de doublons');
     await p.click('#dataBtn'); await p.waitForTimeout(200); ok((await p.locator('#v-set').innerText()).includes('Exporter mes données'), 'menu → Réglages › Données');
     await p.click('#tabs button[data-view=dash]'); await p.waitForTimeout(300);
-    const nb = await p.locator('#v-dash > .dcard').count(); await p.click('.dana'); await p.waitForTimeout(300);
-    ok(nb === 2 && await p.locator('#v-dash > .dcard').count() > 2, `tableau de bord : 2 cartes en haut, analyse repliable (${nb})`);
+    ok(await p.locator('.dana').count() === 0 && await p.locator('#v-dash > .dcard').count() > 2, 'tableau de bord : toutes les cartes affichées, sans repli');
     await p.close();
   }
 
