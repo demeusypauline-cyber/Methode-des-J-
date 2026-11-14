@@ -631,3 +631,19 @@ details.muez>summary{padding:8px 0;font-size:.86rem;color:var(--muted);cursor:po
 .mcard2 .mgrid label{margin:0;font-size:.72rem;color:var(--muted)}
 .mcard2 .mgrid input,.mcard2 .mgrid select{display:block;width:100%;box-sizing:border-box;min-width:0;height:40px;border:1px solid var(--line);border-radius:10px;padding:0 8px;font:inherit;font-size:.86rem;background:#fff;margin-top:3px;color:var(--ink)}
 @media (max-width:420px){.mcard2 .mgrid{grid-template-columns:1fr 1fr}.mcard2 .mgrid .mue{grid-column:1 / -1}}
+/* blocs d'UE contenant leurs matières */
+.ueblk{background:#fff;border:1px solid var(--line);border-radius:22px;padding:10px 10px 2px;margin:0 0 14px}
+.ueblk.seul{background:none;border:0;padding:0}
+.uehd{display:flex;align-items:center;gap:10px;padding:2px 4px 10px;font-weight:700;color:var(--bord)}
+.uehd .uename{flex:1;min-width:0;font-weight:700;color:var(--bord);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.uehd input{width:100px;height:36px;border:1px solid var(--line);border-radius:10px;padding:0 8px;font:inherit;background:var(--bg)}
+.ueblk .mcard2{box-shadow:none;margin:0 0 10px}
+.ueblk>.uem{margin:0 4px 10px}
+.madds{display:flex;flex-direction:column;gap:0}
+.mcard2 .exn{flex:none;display:flex;align-items:center;gap:4px}
+.mcard2.past{filter:grayscale(1);opacity:.65}
+.mcard2.past .jj{color:var(--muted)}
+.mpen{flex:none;width:36px;height:36px;border-radius:50%;border:1.5px solid var(--rose2);background:#fff;color:var(--bord);display:flex;align-items:center;justify-content:center;padding:0}
+.mpen.on{background:var(--bord);color:#fff;border-color:var(--bord)}
+.medit{border-top:1px solid var(--line);margin-top:10px;padding-top:2px}
+.dlink{color:var(--warn)!important}
