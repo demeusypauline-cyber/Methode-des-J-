@@ -175,6 +175,16 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'OK  ' : 'FAIL') + ' ' + 
     ok(h && h.jour === iso(-1) && h.niveau === 4, `date et note corrigées dans la fiche → historique mis à jour (${h && h.jour}, ${h && h.niveau})`);
     await p.close();
   }
+
+  // budget strict : un exo de demain qui rentre, sinon le plus prioritaire
+  for (const c of [{ nom: 'rien ne rentre, exo de 5 min prévu demain → proposé en avance', tom: 5, want: ['L30', 'T5'], inn: ['T5'] }, { nom: 'rien ne rentre ni demain → le plus prioritaire, même trop long', tom: 20, want: ['L30'], inn: ['L30'] }]) {
+    const p = await b.newPage({ viewport: { width: 412, height: 860 } });
+    const sd = { mats: [{ semestre: 'S', nom: 'A' }], ex: [{ id: 'l', semestre: 'S', matiere: 'A', intitule: 'L30', succes: 1, evalue: iso(-6), minutes: 30 }, { id: 'm', semestre: 'S', matiere: 'A', intitule: 'T5', succes: 0, evalue: iso(-1), minutes: c.tom }], hist: [], reglages: { planning: [5, 5, 5, 5, 5, 5, 5] } };
+    await p.addInitScript(s => { localStorage.clear(); localStorage.setItem('mes-exercices-v1', s); sessionStorage.setItem('mes-exercices-sess', '1'); localStorage.setItem('mes-exercices-onglet', 'today'); }, JSON.stringify(sd));
+    await p.goto('http://localhost:8765/'); await p.waitForTimeout(300);
+    const shown = await p.locator('#v-today > .card').allInnerTexts(), got = c.inn.every(n => shown.some(t => t.includes(n))) && shown.length - 1 === c.inn.length;
+    ok(got, `budget 5 min : ${c.nom}`); await p.close();
+  }
   // premier lancement
   const p = await b.newPage({ viewport: { width: 412, height: 860 } }); await p.goto('http://localhost:8765/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(300);
   ok(await p.locator('.welcome').count() === 1, 'premier lancement : carte d’accueil');

@@ -177,14 +177,21 @@
     list.forEach(function (o) {
       var m = mins(o.x);
       if (o.x.reporte === todayISO()) { o.rep = true; o.in = false; return; } /* reporté par toi : ne prend pas de temps aujourd'hui */
-      o.in = cum + m <= eff - ef || (cum === 0 && eff > ef);
+      o.in = cum + m <= eff - ef;
       if (o.in) cum += m; /* un exo qui ne rentre pas est reporté ; un plus court peut prendre sa place */
     });
+    /* rien ne rentre dans le budget : un exo de demain (pas plus loin) qui rentre ; sinon le plus prioritaire, même s'il dépasse */
+    if (cum === 0 && eff > ef) {
+      var room = eff - ef, tm = [];
+      data.ex.forEach(function (x, i) { if (!visible(x) || !x.evalue || examNum(x.semestre, x.matiere) === t) return; var r = revision(x); if (r >= t + 1 && r < t + 2 && mins(x) <= room) tm.push({ x: x, r: r, ex: modeExam(x), i: i }); });
+      tm.sort(cmpPrio).forEach(function (o) { var m = mins(o.x); if (cum + m <= room) { o.in = true; o.early = true; cum += m; list.push(o); } });
+      if (!cum) { var f0 = list.filter(function (o) { return !o.rep; })[0]; if (f0) { f0.in = true; cum += mins(f0.x); } }
+    }
     if (budget < 1e9) { /* budget de demain dépassé : on avance à aujourd'hui ce qui est prévu demain, s'il reste de la place */
       var bT = data.reglages.planning[(new Date().getDay() + 1 + 6) % 7];
       if (typeof bT === 'number' && !isNaN(bT) && bT > 0) {
         var q = list.filter(function (o) { return !o.in && !o.rep; }), early = [];
-        data.ex.forEach(function (x, i) { if (!visible(x) || !x.evalue) return; var r = revision(x); if (r >= t + 1 && r < t + 2) { var o = { x: x, r: r, ex: modeExam(x), i: i }; q.push(o); early.push(o); } });
+        data.ex.forEach(function (x, i) { if (!visible(x) || !x.evalue || list.some(function (z) { return z.x === x; })) return; var r = revision(x); if (r >= t + 1 && r < t + 2) { var o = { x: x, r: r, ex: modeExam(x), i: i }; q.push(o); early.push(o); } });
         q.sort(cmpPrio);
         var cT = 0, ovf = []; q.forEach(function (o) { var m = mins(o.x); if (cT + m <= bT || cT === 0) cT += m; else ovf.push(o); });
         ovf.forEach(function (o) { var m = mins(o.x); if (early.indexOf(o) >= 0 && cum + m <= eff - ef) { o.in = true; o.early = true; cum += m; list.push(o); } });
@@ -1054,8 +1061,13 @@
         if (done[o.i] || o.r >= t + d + 1) return;
         if (d === 0 && o.x && o.x.reporte === todayISO()) return;
         if (examNum(o.x.semestre, o.x.matiere) === t + d) return; /* jour de l'examen : rien dans cette matière, comme dans plan() */
-        if (effB >= 1e9 || cum + o.m <= effB - effF || (cum === 0 && effB > effF)) take(o);
+        if (effB >= 1e9 || cum + o.m <= effB - effF) take(o);
       });
+      if (effB < 1e9 && cum === 0 && effB > effF) { /* même règle que plan() : un exo de demain qui rentre, sinon le plus prioritaire */
+        var room = effB - effF, ok0 = function (o) { return !done[o.i] && !(d === 0 && o.x && o.x.reporte === todayISO()) && examNum(o.x.semestre, o.x.matiere) !== t + d; };
+        cand.filter(function (o) { return ok0(o) && o.r >= t + d + 1 && o.r < t + d + 2 && o.m <= room; }).forEach(function (o) { if (cum + o.m <= room) take(o); });
+        if (!cum) { var f1 = cand.filter(function (o) { return ok0(o) && o.r < t + d + 1; })[0]; if (f1) take(f1); }
+      }
       /* budget de demain dépassé : on avance d'abord à aujourd'hui (la veille) ce qui y est prévu, s'il reste de la place */
       if (bud < 1e9 && d < N - 1) {
         var bT = data.reglages.planning[(wd + 1 + 6) % 7];
@@ -1667,7 +1679,7 @@
   $('examBack').addEventListener('click', function () { $('examDlg').close(); });
   $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
   $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; data.reglages.matieres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 182'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 183'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('dataBtn').addEventListener('click', function () { $('menu').close(); view = 'set'; setTab = 'donnees'; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } window._top = 1; render(); window.scrollTo(0, 0); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
