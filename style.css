@@ -612,3 +612,22 @@ details.muez>summary{padding:8px 0;font-size:.86rem;color:var(--muted);cursor:po
 .bravo .bart svg{display:block;margin:0 auto;max-width:280px}
 .bravo .btxt{font-family:'Chancery',cursive;font-size:2rem;line-height:1.15;color:var(--bord);margin:6px 0 0}
 @media (prefers-reduced-motion:no-preference){.bravo .bart svg{animation:bpop .7s ease-out}@keyframes bpop{from{transform:scale(.6);opacity:0}to{transform:none;opacity:1}}}
+/* ---------- Matières : onglets de période et cartes « examen » ---------- */
+.stabs{display:flex;gap:8px;overflow-x:auto;padding:2px 0 12px;scrollbar-width:none}
+.stabs::-webkit-scrollbar{display:none}
+.stab{flex:none;border:1.5px solid var(--rose2);background:#fff;color:var(--bord);border-radius:999px;padding:8px 16px;font:inherit;font-weight:600;font-size:.88rem;min-height:40px}
+.stab.on{background:var(--bord);border-color:var(--bord);color:#fff}
+.stab.add{padding:8px 14px;font-size:1.1rem;line-height:1}
+.mcard2{background:#fff8fa;border:1px solid #fbe3ec;border-radius:18px;padding:12px 14px;margin:0 0 12px;box-shadow:0 6px 16px #ad145714}
+.mcard2 .ext{display:flex;align-items:center;gap:10px;min-width:0}
+.mcard2 .mn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.95rem;color:var(--ink)}
+.mcard2 .exj{flex:none}
+.mcard2 .mmeta{flex:none;font-size:.74rem}
+.mcard2 .trk{position:relative;height:8px;border-radius:5px;background:#fbe3ec;margin:10px 0 2px}
+.mcard2 .fl{position:absolute;left:0;top:0;bottom:0;border-radius:5px;background:var(--rose)}
+.mcard2 .tk{position:absolute;top:0;bottom:0;width:1.5px;background:#fff8fa}
+.mcard2 .me{position:absolute;top:-4px;bottom:-4px;width:4px;margin-left:-2px;border-radius:2px;background:var(--bord)}
+.mcard2 .mgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px}
+.mcard2 .mgrid label{margin:0;font-size:.72rem;color:var(--muted)}
+.mcard2 .mgrid input,.mcard2 .mgrid select{display:block;width:100%;box-sizing:border-box;min-width:0;height:40px;border:1px solid var(--line);border-radius:10px;padding:0 8px;font:inherit;font-size:.86rem;background:#fff;margin-top:3px;color:var(--ink)}
+@media (max-width:420px){.mcard2 .mgrid{grid-template-columns:1fr 1fr}.mcard2 .mgrid .mue{grid-column:1 / -1}}

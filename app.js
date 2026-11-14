@@ -69,7 +69,7 @@
   /* ---------- tes règles de révision (reprises de ton Excel) ---------- */
   /* caches remis à zéro à chaque enregistrement et à chaque affichage */
   var EXC = null, LVC = null;
-  function resetCaches() { EXC = null; LVC = null; DEFC = null; }
+  function resetCaches() { EXC = null; LVC = null; DEFC = null; GHC = null; }
   function examNum(sem, mat) {
     if (!EXC) { EXC = {}; data.mats.forEach(function (m) { var k = m.semestre + '|' + m.nom; if (!(k in EXC)) EXC[k] = m.examen ? dnum(m.examen) : null; }); }
     var k = sem + '|' + mat; return k in EXC ? EXC[k] : null;
@@ -156,9 +156,20 @@
     }
     return (DEFC[k] = v);
   }
+  /* partage proportionnel (choix de Pauline) : entre matières en mode examen, passe d'abord celle qui a reçu le moins de temps par point d'écart.
+     Temps reçu = minutes de révision des 7 jours précédents (historique, puis révisions simulées) : la mémoire glisse, aucune matière n'est oubliée */
+  var GHC = null, PG = null, SIMG = null;
+  function gDay(map, k, d) { return (map && map[k] && map[k][d]) || 0; }
+  function gKey(x) {
+    if (!GHC) { GHC = {}; var byId = {}; data.ex.forEach(function (z) { byId[z.id] = z; }); (data.hist || []).forEach(function (h) { var z = byId[h.id]; if (!z || !h.jour) return; var kk = z.semestre + '|' + z.matiere, dd = dnum(h.jour); GHC[kk] = GHC[kk] || {}; GHC[kk][dd] = (GHC[kk][dd] || 0) + (h.m > 0 ? h.m : mins(z)); }); }
+    var k = x.semestre + '|' + x.matiere, D = SIMD !== null ? SIMD : TODAY(), g = 0;
+    for (var d = D - 7; d < D; d++) g += gDay(GHC, k, d) + gDay(SIMD !== null ? SIMG : PG, k, d); /* jours précédents seulement : dans une même journée, on reste sur la même matière autant que possible */
+    return g / Math.max(0.01, exDef(x));
+  }
   function cmpPrio(a, b) {
     if (!!a.ex !== !!b.ex) return a.ex ? -1 : 1;
     var la = a.v ? a.L : prio(a.x), lb = b.v ? b.L : prio(b.x);
+    if (a.ex) { var ka = gKey(a.x), kb = gKey(b.x); if (Math.abs(ka - kb) > 1e-9) return ka - kb; }
     if (a.ex) { var da = exDef(a.x), db = exDef(b.x); if (Math.abs(da - db) > 1e-9) return db - da; if (la !== lb) return la - lb; if (Math.abs(a.r - b.r) >= 0.1) return a.r - b.r; }
     else { if (Math.abs(a.r - b.r) >= 0.1) return a.r - b.r; if (la !== lb) return la - lb; }
     if (!!a.v !== !!b.v) return a.v ? 1 : -1;
@@ -174,12 +185,13 @@
     });
     list.sort(cmpPrio);
     var budget = budgetDuJour(), fait = dejaFait(), cum = 0, eff = budget, ef = fait; if (budget >= 1e9) { eff = minutesRestantes(); ef = 0; }
-    list.forEach(function (o) {
-      var m = mins(o.x);
-      if (o.x.reporte === todayISO()) { o.rep = true; o.in = false; return; } /* reporté par toi : ne prend pas de temps aujourd'hui */
-      o.in = cum + m <= eff - ef;
-      if (o.in) cum += m; /* un exo qui ne rentre pas est reporté ; un plus court peut prendre sa place */
-    });
+    PG = {}; var ordN = 0, pool = [];
+    list.forEach(function (o) { o.in = false; if (o.x.reporte === todayISO()) o.rep = true; else pool.push(o); }); /* reporté par toi : ne prend pas de temps aujourd'hui */
+    while (pool.length) { /* on prend un exo à la fois, en recalculant le partage entre matières */
+      pool.sort(cmpPrio); var pick = null; for (var q = 0; q < pool.length; q++) if (cum + mins(pool[q].x) <= eff - ef) { pick = pool[q]; break; }
+      if (!pick) break; pick.in = true; pick.ord = ordN++; cum += mins(pick.x); var kk = pick.x.semestre + '|' + pick.x.matiere; PG[kk] = PG[kk] || {}; PG[kk][t] = (PG[kk][t] || 0) + mins(pick.x); pool.splice(pool.indexOf(pick), 1);
+    }
+    list.sort(function (a, b) { return (a.in ? a.ord : 1e9) - (b.in ? b.ord : 1e9); });
     /* rien ne rentre dans le budget : un exo de demain (pas plus loin) qui rentre ; sinon le plus prioritaire, même s'il dépasse */
     if (cum === 0 && eff > ef) {
       var room = eff - ef, tm = [];
@@ -474,103 +486,84 @@
   function newSem() {
     ask({ t: 'Nouveau semestre', v: '', ph: 'ex. S8 - 2A', ok: 'Suivant' }, function (n) {
       n = n.trim(); if (!n) return;
-      ask({ t: 'Première matière de ' + n, v: '', ok: 'Créer' }, function (m) { m = m.trim(); if (!m) return; if (matTaken(n, m)) { toast('« ' + m + ' » existe déjà.'); return; } addMat(n, m); save(); view = 'mats'; render(); });
+      ask({ t: 'Première matière de ' + n, v: '', ok: 'Créer' }, function (m) { m = m.trim(); if (!m) return; if (matTaken(n, m)) { toast('« ' + m + ' » existe déjà.'); return; } addMat(n, m); try { localStorage.setItem('mes-exercices-semtab', n); } catch (e) { /* ignoré */ } save(); view = 'mats'; render(); });
     });
   }
   function plainBtn(txt, fn, cls) { var b = el('button', cls || 'plain', txt); b.type = 'button'; b.addEventListener('click', fn); return b; }
   function renderMats() {
     var box = $('v-mats'); box.textContent = '';
-    if (semestres().length > 1) {
-      var od = keepOpen(document.createElement('details'), 'ordre', false); od.className = 'mord'; od.appendChild(el('summary', '', 'Ordre des semestres'));
-      var ch = el('div', 'chips');
-      [['alpha', 'A → Z'], ['manuel', 'Manuel']].forEach(function (a) {
-        var b = el('button', 'chip', a[1]); b.type = 'button'; b.setAttribute('aria-pressed', data.reglages.ordreSem === a[0] ? 'true' : 'false');
-        b.addEventListener('click', function () { if (a[0] === 'manuel' && !(data.reglages.semOrdre || []).length) data.reglages.semOrdre = semestres(); data.reglages.ordreSem = a[0]; save(); render(); });
-        ch.appendChild(b);
+    if (!data.mats.length) { box.appendChild(welcomeCard()); return; }
+    var sems = semestres(), cur = null; try { cur = localStorage.getItem('mes-exercices-semtab'); } catch (e) { /* ignoré */ }
+    if (sems.indexOf(cur) < 0) cur = sems[sems.length - 1];
+    /* onglets : un par période (semestre, trimestre, année… le nom est libre) */
+    var tabs = el('div', 'stabs');
+    sems.forEach(function (s) { var b = el('button', 'stab' + (s === cur ? ' on' : ''), s); b.type = 'button'; b.setAttribute('aria-pressed', s === cur ? 'true' : 'false'); b.addEventListener('click', function () { try { localStorage.setItem('mes-exercices-semtab', s); } catch (e) { /* ignoré */ } renderMats(); }); tabs.appendChild(b); });
+    var nb = el('button', 'stab add', '+'); nb.type = 'button'; nb.setAttribute('aria-label', 'Ajouter une période'); nb.addEventListener('click', newSem); tabs.appendChild(nb);
+    box.appendChild(tabs);
+    var s = cur, t = TODAY(), Rg = data.reglages, mats = data.mats.filter(function (m) { return m.semestre === s; });
+    mats.slice().sort(function (a, b) { return (a.examen || '9999') < (b.examen || '9999') ? -1 : (a.examen || '9999') > (b.examen || '9999') ? 1 : a.nom.localeCompare(b.nom, 'fr'); }).forEach(function (m) {
+      var c = el('div', 'mcard2'), top = el('div', 'ext');
+      top.appendChild(el('b', 'mn', m.nom));
+      var mm = document.createElement('details'); mm.className = 'mmenu'; var ms = el('summary', '', '⋯'); ms.setAttribute('aria-label', 'Actions pour ' + m.nom); mm.appendChild(ms);
+      var mp = el('div', 'mpop'); mp.appendChild(plainBtn('Renommer', function () { mm.open = false; renameMat(m); }, 'mopt')); mp.appendChild(plainBtn('Supprimer', function () { mm.open = false; deleteMat(m); }, 'mopt danger')); mm.appendChild(mp);
+      /* même lecture que « Prochains examens » : barre de niveau, repère de l'objectif du jour, J-n */
+      var E = m.examen ? dnum(m.examen) : null, es = data.ex.filter(function (x) { return !x.ajoute && x.evalue && x.semestre === s && x.matiere === m.nom; }), av = es.length ? mean(es.map(function (x) { return effLvl(x); })) : null;
+      if (E !== null && E >= t) {
+        var J = E - t, X = Math.max(1, J > Rg.seuilButoire ? Rg.butoireSi : Rg.butoireSinon), need = Math.round(Math.max(0, Math.min(5, 5 * (1 - Math.max(0, J - X) / Math.max(1, Rg.debutExam)))) * 10) / 10;
+        var jd = el('div', 'exj'); jd.appendChild(el('b', 'jj', J === 0 ? 'Auj.' : 'J-' + J)); jd.appendChild(el('span', 'dd', fromNum(E).slice(0, 6) + fromNum(E).slice(8))); top.appendChild(jd);
+        top.appendChild(mm); c.appendChild(top);
+        var trk = el('div', 'trk'), fl = el('i', 'fl'); fl.style.width = Math.min(100, (av || 0) / 5 * 100) + '%'; if (av !== null) fl.style.background = scale(av); trk.appendChild(fl);
+        for (var q = 1; q < 5; q++) { var tk = el('b', 'tk'); tk.style.left = (q * 20) + '%'; trk.appendChild(tk); }
+        var me = el('u', 'me'); me.style.left = Math.min(100, need / 5 * 100) + '%'; me.title = 'Niveau à avoir aujourd’hui : ' + need; trk.appendChild(me); c.appendChild(trk);
+        c.classList.add('exr2'); top.addEventListener('click', function (e) { if (!e.target.closest('details')) openExam(m); }); top.style.cursor = 'pointer';
+      } else { top.appendChild(el('span', 'muted mmeta', es.length + ' exo' + (es.length > 1 ? 's' : '') + (av !== null ? ' · moyenne ' + fmt1(av) : ''))); top.appendChild(mm); c.appendChild(top); }
+      var g = el('div', 'mgrid'), l1 = el('label', '', 'Examen'), l2 = el('label', '', 'Note /20'), l3 = el('label', 'mue', 'UE');
+      var inp = document.createElement('input'); inp.type = 'date'; inp.value = m.examen || '';
+      inp.addEventListener('change', function () { m.examen = inp.value || null; save(); renderMats(); toast('Date enregistrée.'); });
+      var nt = document.createElement('input'); nt.type = 'number'; nt.inputMode = 'decimal'; nt.step = '0.01'; nt.min = 0; nt.max = 20; nt.placeholder = '–'; nt.value = typeof m.note === 'number' ? m.note : '';
+      nt.addEventListener('change', function () { m.note = nt.value === '' ? null : +nt.value; save(); toast('Note enregistrée.'); });
+      var us = document.createElement('select'); var o0 = el('option', '', 'Aucune'); o0.value = ''; us.appendChild(o0);
+      ueList(s).forEach(function (u) { var o = el('option', '', u); o.value = u; us.appendChild(o); });
+      var on = el('option', '', '+ Nouvelle UE…'); on.value = '__new'; us.appendChild(on); us.value = m.ue || '';
+      us.addEventListener('change', function () {
+        var v = us.value; function set(v) { m.ue = v || null; save(); render(); toast(v ? 'Rangée dans « ' + v + ' ».' : 'UE retirée.'); }
+        if (v === '__new') { us.value = m.ue || ''; ask({ t: 'Nouvelle UE (' + s + ')', v: '', ok: 'Créer' }, function (n) { if (n.trim()) set(n.trim()); }); return; }
+        set(v);
       });
-      od.appendChild(ch);
-      if (data.reglages.ordreSem !== 'alpha') {
-        var rows = el('div', 'drows');
-        semestres().forEach(function (sm) {
-          var r = el('div', 'drow'); r.dataset.sem = sm; var h = el('span', 'dh', '⠿'); r.appendChild(h); r.appendChild(el('span', 'dn', sm));
-          h.addEventListener('pointerdown', function (e) {
-            e.preventDefault(); r.classList.add('drag');
-            function mv(ev) {
-              var kids = Array.prototype.slice.call(rows.children);
-              for (var i = 0; i < kids.length; i++) { var k = kids[i]; if (k === r) continue; var bb = k.getBoundingClientRect(); if (ev.clientY > bb.top && ev.clientY < bb.bottom) { if (kids.indexOf(r) < i) rows.insertBefore(r, k.nextSibling); else rows.insertBefore(r, k); break; } }
-            }
-            function up() {
-              window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); r.classList.remove('drag');
-              data.reglages.semOrdre = Array.prototype.map.call(rows.children, function (k) { return k.dataset.sem; }); data.reglages.ordreSem = 'manuel'; save(); render();
-            }
-            window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
-          });
-          rows.appendChild(r);
-        });
-        var dl = el('div', 'dlist'); dl.appendChild(rows); od.appendChild(dl);
-      }
-      box.appendChild(od);
-    }
-    if (!data.mats.length) box.appendChild(welcomeCard());
-    semestres().forEach(function (s) {
-      var mats = data.mats.filter(function (m) { return m.semestre === s; });
-      var det = keepOpen(document.createElement('details'), 'sem:' + s, true); det.className = 'msem';
-      var sm = el('summary'); sm.appendChild(el('b', '', s)); sm.appendChild(el('span', 'mcount', mats.length + ' matière' + (mats.length > 1 ? 's' : ''))); det.appendChild(sm);
-      var list = el('div', 'mlist2');
-      mats.forEach(function (m) {
-        var r = el('div', 'mrow2'), hd = el('div', 'mch');
-        hd.appendChild(el('b', 'mname', m.nom));
-        var mm = document.createElement('details'); mm.className = 'mmenu'; var ms = el('summary', '', '⋯'); ms.setAttribute('aria-label', 'Actions pour ' + m.nom); mm.appendChild(ms);
-        var mp = el('div', 'mpop'); mp.appendChild(plainBtn('Renommer', function () { mm.open = false; renameMat(m); }, 'mopt')); mp.appendChild(plainBtn('Supprimer', function () { mm.open = false; deleteMat(m); }, 'mopt danger')); mm.appendChild(mp);
-        hd.appendChild(mm); r.appendChild(hd);
-        var g = el('div', 'mgrid'), l1 = el('label', '', 'Examen'), l2 = el('label', '', 'Note /20'), l3 = el('label', 'mue', 'UE');
-        var inp = document.createElement('input'); inp.type = 'date'; inp.value = m.examen || '';
-        inp.addEventListener('change', function () { m.examen = inp.value || null; save(); toast('Date enregistrée.'); });
-        var nt = document.createElement('input'); nt.type = 'number'; nt.inputMode = 'decimal'; nt.step = '0.01'; nt.min = 0; nt.max = 20; nt.placeholder = '–'; nt.value = typeof m.note === 'number' ? m.note : '';
-        nt.addEventListener('change', function () { m.note = nt.value === '' ? null : +nt.value; save(); toast('Note enregistrée.'); });
-        var us = document.createElement('select');
-        var o0 = el('option', '', 'Aucune'); o0.value = ''; us.appendChild(o0);
-        ueList(s).forEach(function (u) { var o = el('option', '', u); o.value = u; us.appendChild(o); });
-        var on = el('option', '', '+ Nouvelle UE…'); on.value = '__new'; us.appendChild(on); us.value = m.ue || '';
-        us.addEventListener('change', function () {
-          var v = us.value;
-          function set(v) { m.ue = v || null; save(); render(); toast(v ? 'Rangée dans « ' + v + ' ».' : 'UE retirée.'); }
-          if (v === '__new') { us.value = m.ue || ''; ask({ t: 'Nouvelle UE (' + s + ')', v: '', ok: 'Créer' }, function (n) { if (n.trim()) set(n.trim()); }); return; }
-          set(v);
-        });
-        l1.appendChild(inp); l2.appendChild(nt); l3.appendChild(us); g.appendChild(l1); g.appendChild(l2); g.appendChild(l3); r.appendChild(g);
-        list.appendChild(r);
-      });
-      det.appendChild(list);
-      det.appendChild(plainBtn('+ Ajouter une matière', function () { ask({ t: 'Nouvelle matière (' + s + ')', v: '', ok: 'Ajouter' }, function (n) { n = n.trim(); if (!n) return; if (matTaken(s, n)) { toast('« ' + n + ' » existe déjà.'); return; } addMat(s, n); save(); render(); }); }, 'row primary madd'));
-      /* unités d'enseignement : création, renommage, moyenne ; l'affectation se fait dans chaque matière */
-      var ues = ueList(s), ud = keepOpen(document.createElement('details'), 'ue:' + s, false); ud.className = 'muez';
-      ud.appendChild(el('summary', '', 'Unités d’enseignement (' + ues.length + ')'));
-      ues.forEach(function (u) {
-        var r = el('div', 'uerow2'), top = el('div', 'mch');
-        top.appendChild(plainBtn(u + ' ✎', function () {
-          ask({ t: 'Renommer l’UE', p: 'Vide = supprimer l’UE (les matières restent).', v: u, ok: 'OK' }, function (n) { n = n.trim();
-            (data.ues || []).forEach(function (z) { if (z.semestre === s && z.nom === u) z.nom = n; }); if (!n) data.ues = data.ues.filter(function (z) { return z.nom; });
-            data.mats.forEach(function (m) { if (m.semestre === s && m.ue === u) m.ue = n || null; }); save(); render(); });
-        }, 'namebtn'));
-        var def = (data.ues || []).filter(function (z) { return z.semestre === s && z.nom === u; })[0];
-        var inp = document.createElement('input'); inp.type = 'number'; inp.inputMode = 'decimal'; inp.step = '0.01'; inp.min = 0; inp.max = 20; inp.setAttribute('aria-label', 'Moyenne de ' + u);
-        var auto = (function () { var g = ueGroups(s).filter(function (x) { return x.nom === u; })[0]; return g && !(def && typeof def.moy === 'number') ? g.avg : null; })();
-        inp.placeholder = auto !== null ? fmt1(auto) + ' (auto)' : 'moyenne /20'; inp.value = def && typeof def.moy === 'number' ? def.moy : '';
-        inp.addEventListener('change', function () { ueDef(s, u).moy = inp.value === '' ? null : +inp.value; save(); render(); });
-        top.appendChild(inp); r.appendChild(top);
-        var inU = mats.filter(function (m) { return m.ue === u; }).map(function (m) { return m.nom; });
-        r.appendChild(el('div', 'muted uem', inU.length ? inU.join(' · ') : 'Aucune matière : choisis cette UE dans une matière.'));
-        ud.appendChild(r);
-      });
-      ud.appendChild(plainBtn('+ Ajouter une UE', function () { ask({ t: 'Nouvelle UE (' + s + ')', v: '', ok: 'Créer' }, function (n) { if (!n.trim()) return; ueDef(s, n.trim()); save(); render(); }); }));
-      det.appendChild(ud);
-      var acts = el('div', 'macts');
-      acts.appendChild(plainBtn('Renommer le semestre', function () { renameSem(s); }, 'link'));
-      if (data.reglages.ordreSem !== 'alpha') { var bu = plainBtn('↑', function () { moveSem(s, -1); }, 'link'), bd = plainBtn('↓', function () { moveSem(s, 1); }, 'link'); bu.setAttribute('aria-label', 'Monter le semestre'); bd.setAttribute('aria-label', 'Descendre le semestre'); acts.appendChild(bu); acts.appendChild(bd); }
-      det.appendChild(acts); box.appendChild(det);
+      l1.appendChild(inp); l2.appendChild(nt); l3.appendChild(us); g.appendChild(l1); g.appendChild(l2); g.appendChild(l3); c.appendChild(g);
+      box.appendChild(c);
     });
-    box.appendChild(plainBtn('+ Ajouter un semestre', newSem, 'row plain'));
+    box.appendChild(plainBtn('+ Ajouter une matière', function () { ask({ t: 'Nouvelle matière (' + s + ')', v: '', ok: 'Ajouter' }, function (n) { n = n.trim(); if (!n) return; if (matTaken(s, n)) { toast('« ' + n + ' » existe déjà.'); return; } addMat(s, n); save(); render(); }); }, 'row primary madd'));
+    /* unités d'enseignement de la période */
+    var ues = ueList(s), ud = keepOpen(document.createElement('details'), 'ue:' + s, false); ud.className = 'muez';
+    ud.appendChild(el('summary', '', 'Unités d’enseignement (' + ues.length + ')'));
+    ues.forEach(function (u) {
+      var r = el('div', 'uerow2'), top = el('div', 'mch');
+      top.appendChild(plainBtn(u + ' ✎', function () {
+        ask({ t: 'Renommer l’UE', p: 'Vide = supprimer l’UE (les matières restent).', v: u, ok: 'OK' }, function (n) { n = n.trim();
+          (data.ues || []).forEach(function (z) { if (z.semestre === s && z.nom === u) z.nom = n; }); if (!n) data.ues = data.ues.filter(function (z) { return z.nom; });
+          data.mats.forEach(function (m) { if (m.semestre === s && m.ue === u) m.ue = n || null; }); save(); render(); });
+      }, 'namebtn'));
+      var def = (data.ues || []).filter(function (z) { return z.semestre === s && z.nom === u; })[0];
+      var inp = document.createElement('input'); inp.type = 'number'; inp.inputMode = 'decimal'; inp.step = '0.01'; inp.min = 0; inp.max = 20; inp.setAttribute('aria-label', 'Moyenne de ' + u);
+      var auto = (function () { var g = ueGroups(s).filter(function (x) { return x.nom === u; })[0]; return g && !(def && typeof def.moy === 'number') ? g.avg : null; })();
+      inp.placeholder = auto !== null ? fmt1(auto) + ' (auto)' : 'moyenne /20'; inp.value = def && typeof def.moy === 'number' ? def.moy : '';
+      inp.addEventListener('change', function () { ueDef(s, u).moy = inp.value === '' ? null : +inp.value; save(); render(); });
+      top.appendChild(inp); r.appendChild(top);
+      var inU = mats.filter(function (m) { return m.ue === u; }).map(function (m) { return m.nom; });
+      r.appendChild(el('div', 'muted uem', inU.length ? inU.join(' · ') : 'Aucune matière : choisis cette UE dans une matière.'));
+      ud.appendChild(r);
+    });
+    ud.appendChild(plainBtn('+ Ajouter une UE', function () { ask({ t: 'Nouvelle UE (' + s + ')', v: '', ok: 'Créer' }, function (n) { if (!n.trim()) return; ueDef(s, n.trim()); save(); render(); }); }));
+    box.appendChild(ud);
+    /* actions de la période */
+    var acts = el('div', 'macts');
+    acts.appendChild(plainBtn('Renommer « ' + s + ' »', function () { renameSem(s); }, 'link'));
+    if (sems.length > 1) {
+      acts.appendChild(plainBtn('Ordre : ' + (Rg.ordreSem === 'alpha' ? 'A → Z' : 'manuel'), function () { if (Rg.ordreSem === 'alpha') { Rg.ordreSem = 'manuel'; if (!(Rg.semOrdre || []).length) Rg.semOrdre = semestres(); } else Rg.ordreSem = 'alpha'; save(); renderMats(); }, 'link'));
+      if (Rg.ordreSem !== 'alpha') { var bu = plainBtn('← Avant', function () { moveSem(s, -1); }, 'link'), bd = plainBtn('Après →', function () { moveSem(s, 1); }, 'link'); acts.appendChild(bu); acts.appendChild(bd); }
+    }
+    box.appendChild(acts);
   }
   /* premier lancement : trois actions, sans parcours imposé */
   function welcomeCard() {
@@ -1016,7 +1009,7 @@
   function expectNote(pl, gap) { return pl > 5 ? curveAt(6, gap - interval(pl)) : curveAt(pl, gap); }
   function drawCharge(cv, L, t, ax, extra, noDraw, opt) {
     opt = opt || {}; var N = opt.N || 42, LOG = [], av = [], avP = [], late = [], lateEx = [], ex = [], nm = [], pv = [], pvL = [], pvE = [], pvLE = [], cnt = []; for (var i = 0; i < N; i++) { av.push(0); avP.push(0); late.push(0); lateEx.push(0); ex.push(0); nm.push(0); pv.push(0); pvL.push(0); pvE.push(0); pvLE.push(0); cnt.push(0); }
-    var RET = true, vc = 0, FIL = !opt.all && !!(data.reglages.semestres.length || (data.reglages.matieres || []).length), gh = []; for (var i2 = 0; i2 < N; i2++) gh.push(0); /* FIL : filtre actif → tout est simulé, les autres matières sont dessinées en fantôme */ SIML = {}; DEFC = null;
+    var RET = true, vc = 0, FIL = !opt.all && !!(data.reglages.semestres.length || (data.reglages.matieres || []).length), gh = []; for (var i2 = 0; i2 < N; i2++) gh.push(0); /* FIL : filtre actif → tout est simulé, les autres matières sont dessinées en fantôme */ SIML = {}; SIMG = {}; DEFC = null;
     var cand = [];
     data.ex.forEach(function (x, i) { if ((opt.all || FIL || visible(x)) && x.evalue) cand.push({ x: x, r: revision(x), ex: modeExam(x), i: i, m: mins(x) }); });
     function lvO(o) { return o.v ? o.L : prio(o.x); }
@@ -1031,7 +1024,7 @@
       var effB = bud, effF = fait; if (bud >= 1e9) { effB = d === 0 ? minutesRestantes() : 1440; effF = d === 0 ? 0 : fait; }
       var take = function (o) {
         cum += o.m;
-        done[o.i] = 1; var hid = FIL && !visible(o.x); if (!hid) cnt[d]++;
+        var gk = o.x.semestre + '|' + o.x.matiere; SIMG[gk] = SIMG[gk] || {}; SIMG[gk][t + d] = (SIMG[gk][t + d] || 0) + o.m; done[o.i] = 1; var hid = FIL && !visible(o.x); if (!hid) cnt[d]++;
         if (RET) {
           var ox = o.x, gp = t + d - (o.v ? o.ev : dnum(o.x.evalue));
           if (gp >= 0) {
@@ -1045,12 +1038,9 @@
         else if (o.r >= t + d + 1) { if (o.v) avP[d] += o.m; else av[d] += o.m; } /* avancé depuis un jour suivant */
         else if (o.v) { if (o.r < t + d) { if (o.ex) pvLE[d] += o.m; else pvL[d] += o.m; } else if (o.ex) pvE[d] += o.m; else pv[d] += o.m; } else if (o.r < t + d) { if (o.ex) lateEx[d] += o.m; else late[d] += o.m; } else if (o.ex) ex[d] += o.m; else nm[d] += o.m;
       };
-      cand.forEach(function (o) {
-        if (done[o.i] || o.r >= t + d + 1) return;
-        if (d === 0 && o.x && o.x.reporte === todayISO()) return;
-        if (examNum(o.x.semestre, o.x.matiere) === t + d) return; /* jour de l'examen : rien dans cette matière, comme dans plan() */
-        if (effB >= 1e9 || cum + o.m <= effB - effF) take(o);
-      });
+      var elig = function (o) { return !done[o.i] && o.r < t + d + 1 && !(d === 0 && o.x && o.x.reporte === todayISO()) && examNum(o.x.semestre, o.x.matiere) !== t + d; }; /* jour de l'examen : rien dans cette matière, comme dans plan() */
+      if (effB >= 1e9) cand.filter(elig).forEach(take);
+      else for (;;) { srt(); var pk = null; for (var q1 = 0; q1 < cand.length; q1++) if (elig(cand[q1]) && cum + cand[q1].m <= effB - effF) { pk = cand[q1]; break; } if (!pk) break; take(pk); } /* un exo à la fois, partage recalculé */
       if (effB < 1e9 && cum === 0 && effB > effF) { /* même règle que plan() : un exo de demain qui rentre, sinon le plus prioritaire */
         var room = effB - effF, ok0 = function (o) { return !done[o.i] && !(d === 0 && o.x && o.x.reporte === todayISO()) && examNum(o.x.semestre, o.x.matiere) !== t + d; };
         cand.filter(function (o) { return ok0(o) && o.r >= t + d + 1 && o.r < t + d + 2 && o.m <= room; }).forEach(function (o) { if (cum + o.m <= room) take(o); });
@@ -1144,7 +1134,7 @@
     var bud = R.planning.map(function (v, i) { return JOURS[i] + ' ' + (typeof v === 'number' && !isNaN(v) ? v + ' min' : 'sans limite'); }).join(' · ');
     c.appendChild(el('h2', 'rtitle', 'Toutes les règles de l’appli'));
     sec('Niveaux et intervalles', ['Quand tu refais un exercice (✓) tu lui donnes un niveau de 0 à 5. La prochaine révision tombe après : ' + iv + '.', 'Après un 5, chaque 5 de plus d’affilée repousse la révision de ' + R.pasApres5 + ' j de plus (niveaux 6, 7…).']);
-    sec('Mode examen', ['À moins de ' + R.debutExam + ' j d’un examen, les révisions de la matière sont compressées pour que tout soit vu avant l’examen : fait plus de ' + R.seuilButoire + ' j avant, on s’arrête ' + R.butoireSi + ' j avant ; sinon ' + (R.butoireSinon > 1 ? R.butoireSinon + ' j' : 'la veille') + ' avant.', 'Le mode est jugé à la date de chaque révision : une révision qui tombe après l’examen redevient normale. Aucune révision n’est prévue le jour de l’examen, ni après une révision déjà faite dans la période finale. Un exo au niveau 5 ou plus dont la révision en mode examen tomberait le jour de l’examen ou après garde sa révision normale.', 'Les exos en mode examen passent avant les autres. Entre matières, la plus en retard sur l’objectif du jour (le repère de la barre des cartes d’examen moins ta moyenne) passe d’abord ; dans une matière, les niveaux les plus bas, puis la date de révision.']);
+    sec('Mode examen', ['À moins de ' + R.debutExam + ' j d’un examen, les révisions de la matière sont compressées pour que tout soit vu avant l’examen : fait plus de ' + R.seuilButoire + ' j avant, on s’arrête ' + R.butoireSi + ' j avant ; sinon ' + (R.butoireSinon > 1 ? R.butoireSinon + ' j' : 'la veille') + ' avant.', 'Le mode est jugé à la date de chaque révision : une révision qui tombe après l’examen redevient normale. Aucune révision n’est prévue le jour de l’examen, ni après une révision déjà faite dans la période finale. Un exo au niveau 5 ou plus dont la révision en mode examen tomberait le jour de l’examen ou après garde sa révision normale.', 'Les exos en mode examen passent avant les autres. Entre matières, le temps est partagé en proportion de leur retard sur l’objectif du jour (le repère de la barre des cartes d’examen moins ta moyenne) : passe d’abord la matière qui a reçu le moins de minutes, sur les 7 jours précédents, par point de retard. Dans une journée, on reste autant que possible sur la même matière. Dans une matière, les niveaux les plus bas, puis la date de révision.']);
     sec('Budget du jour et priorités', ['Budget par jour : ' + bud + '.', 'Les exos hors mode examen sont classés par date de révision la plus ancienne, puis niveau le plus bas. Ceux qui ne rentrent pas dans le budget attendent (un plus court peut passer devant).', 'Si le budget de demain est dépassé, ce qui y est prévu est d’abord avancé à aujourd’hui quand il reste de la place, avant d’être repoussé.', 'Sans limite : aujourd’hui, le temps affiché ne dépasse pas les heures qu’il reste jusqu’à demain, arrondies à l’heure du dessus (« Il reste X h ») ; les autres jours sans limite comptent au plus 24 h.']);
     sec('Précisions (version 179)', ['Une révision n’est jamais prévue le jour même : au plus tôt le lendemain.', 'Une fois l’examen passé, l’exo revient aux intervalles normaux ; après la dernière révision d’avant examen, la suivante reprend le rythme normal.', 'Le jour de l’examen, les exos de la matière ne sont pas proposés.', '« Annuler » (dans le message qui suit une note, une suppression, un report ou une remise à zéro du minuteur, ou dans l’historique) remet l’exo exactement comme avant. Seule la dernière note d’un exo s’annule, et seulement s’il n’a pas changé depuis.', 'Une matière ne se supprime que si aucun exercice n’y est rattaché (corbeille comprise). Un semestre disparaît avec sa dernière matière.']);
     sec('Reporter', ['La flèche écarte un exo d’aujourd’hui : il ne prend plus de temps dans ton budget, mais sa date de révision ne change pas. Il revient demain.']);
@@ -1668,7 +1658,7 @@
   $('examBack').addEventListener('click', function () { $('examDlg').close(); });
   $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
   $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; data.reglages.matieres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 186'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 187'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('dataBtn').addEventListener('click', function () { $('menu').close(); view = 'set'; setTab = 'donnees'; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } window._top = 1; render(); window.scrollTo(0, 0); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });

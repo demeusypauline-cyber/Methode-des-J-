@@ -51,13 +51,13 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'OK  ' : 'FAIL') + ' ' + 
     const m1 = await p.locator('#exoList .card', { hasText: 'M1' }).innerText(); ok(m1.includes(new Date(Date.now() + 5 * 864e5).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })), `${w} après l'examen : rythme normal (${m1.replace(/\n/g, ' ')})`);
     // matières
     await p.click('#tabs button[data-view=mats]'); await p.waitForTimeout(150);
-    const det = p.locator('details.msem', { hasText: 'S8' }); await det.locator('.madd').click(); await p.fill('#askI', 'maths'); await p.click('#askOk'); await p.waitForTimeout(100);
+    await p.locator('.stab', { hasText: /^S8$/ }).click(); await p.waitForTimeout(100); const det = p.locator('#v-mats'); await det.locator('.madd').click(); await p.fill('#askI', 'maths'); await p.click('#askOk'); await p.waitForTimeout(100);
     ok((await D()).mats.filter(m => m.semestre === 'S8' && /maths/i.test(m.nom)).length === 1, `${w} doublon refusé`);
-    await det.locator('.mrow2', { hasText: 'Maths' }).locator('.mmenu summary').click(); await det.locator('.mrow2', { hasText: 'Maths' }).locator('.mopt.danger').click(); await p.waitForTimeout(100);
+    await det.locator('.mcard2', { hasText: 'Maths' }).locator('.mmenu summary').click(); await det.locator('.mcard2', { hasText: 'Maths' }).locator('.mopt.danger').click(); await p.waitForTimeout(100);
     ok(!(await p.locator('#askDlg').evaluate(d => d.open)) && (await D()).mats.some(m => m.nom === 'Maths'), `${w} suppression refusée si exercices`);
-    await det.locator('.mrow2', { hasText: 'Vide' }).locator('.mmenu summary').click(); await det.locator('.mrow2', { hasText: 'Vide' }).locator('.mopt.danger').click(); await p.waitForTimeout(100); await p.click('#askOk'); await p.waitForTimeout(100);
+    await det.locator('.mcard2', { hasText: 'Vide' }).locator('.mmenu summary').click(); await det.locator('.mcard2', { hasText: 'Vide' }).locator('.mopt.danger').click(); await p.waitForTimeout(100); await p.click('#askOk'); await p.waitForTimeout(100);
     ok(!(await D()).mats.some(m => m.nom === 'Vide'), `${w} matière vide supprimée`);
-    await p.locator('details.msem', { hasText: 'S8' }).locator('button', { hasText: 'Renommer le semestre' }).click(); await p.fill('#askI', 'S8 bis'); await p.click('#askOk'); await p.waitForTimeout(100);
+    await p.locator('#v-mats .macts button', { hasText: 'Renommer' }).click(); await p.fill('#askI', 'S8 bis'); await p.click('#askOk'); await p.waitForTimeout(100);
     let d5 = await D(); ok(d5.reglages.semOrdre[0] === 'S8 bis' && d5.ex.find(x => x.id === 'a4').semestre === 'S8 bis', `${w} renommage du semestre : ordre et exos suivis`);
 
     // audit 1 : note puis modification de la durée → annulation refusée
@@ -69,7 +69,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'OK  ' : 'FAIL') + ' ' + 
     ok(await hrow.locator('button', { hasText: 'Annuler' }).count() === 0 && (await D()).ex.find(x => x.id === 'a1').minutes === 17, `${w} annulation refusée après changement de durée`);
     // audit 2 : filtre sur deux matières, renommage de l'une → les deux restent sélectionnées
     await p.evaluate(() => { const d = JSON.parse(localStorage.getItem('mes-exercices-v1')); d.reglages.matieres = ['physique', 'maths']; localStorage.setItem('mes-exercices-v1', JSON.stringify(d)); }); await p.reload(); await p.waitForTimeout(300);
-    await p.click('#tabs button[data-view=mats]'); await p.locator('.mrow2', { hasText: 'Physique' }).locator('.mmenu summary').click(); await p.locator('.mrow2', { hasText: 'Physique' }).locator('.mopt').first().click(); await p.fill('#askI', 'Physique II'); await p.click('#askOk'); await p.waitForTimeout(100);
+    await p.click('#tabs button[data-view=mats]'); await p.locator('.stab', { hasText: 'S7' }).click(); await p.waitForTimeout(100); await p.locator('.mcard2', { hasText: 'Physique' }).locator('.mmenu summary').click(); await p.locator('.mcard2', { hasText: 'Physique' }).locator('.mopt').first().click(); await p.fill('#askI', 'Physique II'); await p.click('#askOk'); await p.waitForTimeout(100);
     const fm = (await D()).reglages.matieres; ok(fm.includes('physique ii') && fm.includes('maths'), `${w} filtre conservé après renommage (${fm})`);
     await p.evaluate(() => { const d = JSON.parse(localStorage.getItem('mes-exercices-v1')); d.reglages.matieres = []; localStorage.setItem('mes-exercices-v1', JSON.stringify(d)); }); await p.reload(); await p.waitForTimeout(300);
 
