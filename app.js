@@ -1658,7 +1658,7 @@
     if (nm === 'renderToday') renderToday = wrapped; else if (nm === 'renderExos') renderExos = wrapped; else if (nm === 'renderMats') renderMats = wrapped; else if (nm === 'renderDash') renderDash = wrapped; else renderSet = wrapped;
   });
 
-  if (/[?&]test\b/.test(location.search)) window.__t = { curveAt: curveAt, effAt: effAt, oubliAll: oubliAll, lvl: lvl, interval: interval, expectNote: expectNote, decay: decay, data: function () { return data; }, reset: function () { DEC = null; resetCaches(); } }; /* accès pour les tests automatiques */
+  if (/[?&]test\b/.test(location.search)) window.__t = { drawCharge: drawCharge, TODAY: TODAY, curveAt: curveAt, effAt: effAt, oubliAll: oubliAll, lvl: lvl, interval: interval, expectNote: expectNote, decay: decay, data: function () { return data; }, reset: function () { DEC = null; resetCaches(); } }; /* accès pour les tests automatiques */
   load(); chMigrer();
   document.querySelectorAll('#tabs button').forEach(function (b) { b.addEventListener('click', function () { window._hkOff = 1; try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { /* sans vibration */ } view = b.dataset.view; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } shown = 120; window._top = 1; render(); window.scrollTo(0, 0); }); });
   $('addBtn').addEventListener('click', function () { openEditor(null); });
