@@ -556,7 +556,7 @@
       var def = (data.ues || []).filter(function (z) { return z.semestre === s && z.nom === u; })[0];
       var inp = document.createElement('input'); inp.type = 'number'; inp.inputMode = 'decimal'; inp.step = '0.01'; inp.min = 0; inp.max = 20; inp.setAttribute('aria-label', 'Moyenne de ' + u);
       var auto = (function () { var g = ueGroups(s).filter(function (x) { return x.nom === u; })[0]; return g && !(def && typeof def.moy === 'number') ? g.avg : null; })();
-      inp.placeholder = auto !== null ? fmt1(auto) + ' (auto)' : 'moy. /20'; inp.value = def && typeof def.moy === 'number' ? def.moy : '';
+      inp.placeholder = auto !== null ? fmt1(auto) : 'moy. /20'; inp.value = def && typeof def.moy === 'number' ? def.moy : '';
       inp.addEventListener('change', function () { ueDef(s, u).moy = inp.value === '' ? null : +inp.value; save(); render(); });
       hd.appendChild(inp); blk.appendChild(hd);
       var inU = mats.filter(function (m) { return m.ue === u; }).sort(byExam);
@@ -1676,7 +1676,7 @@
   $('examBack').addEventListener('click', function () { $('examDlg').close(); });
   $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
   $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; data.reglages.matieres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 190'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 191'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('dataBtn').addEventListener('click', function () { $('menu').close(); view = 'set'; setTab = 'donnees'; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } window._top = 1; render(); window.scrollTo(0, 0); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
