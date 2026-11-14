@@ -161,6 +161,20 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'OK  ' : 'FAIL') + ' ' + 
     ok(nb === 2 && await p.locator('#v-dash > .dcard').count() > 2, `tableau de bord : 2 cartes en haut, analyse repliable (${nb})`);
     await p.close();
   }
+
+  // date d'une révision corrigée après coup : l'historique suit
+  {
+    const p = await b.newPage({ viewport: { width: 412, height: 860 } });
+    const sd = { mats: [{ semestre: 'S', nom: 'A' }], ex: [{ id: 'k1', semestre: 'S', matiere: 'A', intitule: 'K', succes: 1, evalue: iso(-5) }], hist: [], reglages: {} };
+    await p.addInitScript(s => { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', 1); localStorage.clear(); localStorage.setItem('mes-exercices-v1', s); sessionStorage.setItem('mes-exercices-sess', '1'); localStorage.setItem('mes-exercices-onglet', 'today'); } }, JSON.stringify(sd));
+    await p.goto('http://localhost:8765/'); await p.waitForTimeout(300);
+    await p.locator('#v-today .card', { hasText: 'K' }).locator('.abtn.main').first().click(); await p.locator('#doneBtns button').nth(3).click(); await p.waitForTimeout(150);
+    ok(await p.locator('.card.bravo').count() === 1, 'tous les exos du jour faits : carte de félicitations');
+    await p.click('#tabs button[data-view=exos]'); await p.locator('#exoList .card', { hasText: 'K' }).click(); await p.fill('#fDate', iso(-1)); await p.selectOption('#fSucces', '4'); await p.click('#form button[type=submit]'); await p.waitForTimeout(100);
+    const d = await p.evaluate(() => JSON.parse(localStorage.getItem('mes-exercices-v1'))), h = d.hist.filter(z => z.id === 'k1' && !z.fige).pop();
+    ok(h && h.jour === iso(-1) && h.niveau === 4, `date et note corrigées dans la fiche → historique mis à jour (${h && h.jour}, ${h && h.niveau})`);
+    await p.close();
+  }
   // premier lancement
   const p = await b.newPage({ viewport: { width: 412, height: 860 } }); await p.goto('http://localhost:8765/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(300);
   ok(await p.locator('.welcome').count() === 1, 'premier lancement : carte d’accueil');

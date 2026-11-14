@@ -607,3 +607,8 @@ details.muez>summary{padding:8px 0;font-size:.86rem;color:var(--muted);cursor:po
 .uem{font-size:.74rem;margin-top:2px}
 .macts{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;border-top:1px solid var(--line);padding-top:8px}
 .link{border:0;background:none;color:var(--muted);font:inherit;font-size:.82rem;padding:6px 2px;min-height:36px}
+/* félicitations du jour */
+.card.bravo{text-align:center;padding:18px 16px 20px;background:linear-gradient(180deg,#fff,#fff3f7)}
+.bravo .bart svg{display:block;margin:0 auto;max-width:280px}
+.bravo .btxt{font-family:'Chancery',cursive;font-size:2rem;line-height:1.15;color:var(--bord);margin:6px 0 0}
+@media (prefers-reduced-motion:no-preference){.bravo .bart svg{animation:bpop .7s ease-out}@keyframes bpop{from{transform:scale(.6);opacity:0}to{transform:none;opacity:1}}}
