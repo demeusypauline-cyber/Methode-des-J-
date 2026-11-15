@@ -1366,6 +1366,7 @@
       var bt = el('button', '', String(i)); bt.type = 'button'; bt.appendChild(el('small', '', n)); var dj = revisionIf(x, i) - TODAY(); bt.appendChild(el('em', 'nxt', dj === 1 ? 'demain' : 'dans ' + dj + ' j'));
       bt.addEventListener('click', function () {
         var ca = chGetAll(), ch0 = ca[x.id]; delete ca[x.id]; chSetAll(ca); var h = addHist(x, i); if (ch0) { h.chrono = ch0; h.chronoT = (data.chronos[x.id] || {}).t; } x.succes = i; if (i < 5) x.p5 = 0; x.evalue = todayISO(); h.apres = {}; PREVK.forEach(function (k) { if (k in x) h.apres[k] = x[k]; }); save(); $('doneDlg').close(); render();
+        setTimeout(function () { var t = $('toast'); t.classList.add('pulse'); setTimeout(function () { t.classList.remove('pulse'); }, 500); }, 10);
         toast('Prochaine révision : ' + fromNum(revision(x)), function () { if (!canUndo(h)) { toast('L’exo a changé depuis : annulation impossible.'); return; } undoHist(h); save(); render(); toast('Note annulée.'); });
       });
       b.appendChild(bt);
@@ -1674,14 +1675,19 @@
 
   if (/[?&]test\b/.test(location.search)) window.__t = { drawCharge: drawCharge, TODAY: TODAY, curveAt: curveAt, effAt: effAt, oubliAll: oubliAll, lvl: lvl, interval: interval, expectNote: expectNote, decay: decay, data: function () { return data; }, reset: function () { DEC = null; resetCaches(); } }; /* accès pour les tests automatiques */
   load(); chMigrer();
-  document.querySelectorAll('#tabs button').forEach(function (b) { b.addEventListener('click', function () { window._hkOff = 1; try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { /* sans vibration */ } view = b.dataset.view; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } shown = 120; window._top = 1; render(); window.scrollTo(0, 0); }); });
+  /* animations (règles de Pauline) : origine des fenêtres = point touché ; entrée décalée des cartes au changement d'onglet */
+  var lastPt = null; document.addEventListener('pointerdown', function (e) { lastPt = { x: e.clientX, y: e.clientY }; }, true);
+  (function () { var sm = HTMLDialogElement.prototype.showModal; HTMLDialogElement.prototype.showModal = function () { sm.apply(this, arguments); if (lastPt && !this.classList.contains('full')) { var r = this.getBoundingClientRect(); this.style.setProperty('--ox', (lastPt.x - r.left) + 'px'); this.style.setProperty('--oy', (lastPt.y - r.top) + 'px'); } }; })();
+  function enterAnim() { var sec = document.querySelector('main > section:not([hidden])'); if (!sec) return; var i = 0; sec.querySelectorAll(':scope > .card, :scope > .dcard, :scope > .mcard2, :scope > .ueblk, #exoList > .card').forEach(function (c) { if (i < 14) { c.style.setProperty('--i', i++); c.classList.add('enter'); setTimeout(function () { c.classList.remove('enter'); }, 900); } }); }
+  function swapView(fn) { if (document.startViewTransition && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) document.startViewTransition(function () { fn(); }); else fn(); }
+  document.querySelectorAll('#tabs button').forEach(function (b) { b.addEventListener('click', function () { window._hkOff = 1; try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { /* sans vibration */ } view = b.dataset.view; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } shown = 120; window._top = 1; swapView(function () { render(); window.scrollTo(0, 0); enterAnim(); }); }); });
   $('addBtn').addEventListener('click', function () { openEditor(null); });
   $('search').addEventListener('input', function () { shown = 120; renderExos(); });
   $('filtBtn').addEventListener('click', function () { $('filtDlg').showModal(); });
   $('examBack').addEventListener('click', function () { $('examDlg').close(); });
   $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
   $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; data.reglages.matieres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 194'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 195'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('dataBtn').addEventListener('click', function () { $('menu').close(); view = 'set'; setTab = 'donnees'; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } window._top = 1; render(); window.scrollTo(0, 0); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });

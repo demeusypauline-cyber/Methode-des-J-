@@ -649,3 +649,42 @@ details.muez>summary{padding:8px 0;font-size:.86rem;color:var(--muted);cursor:po
 .dlink{color:var(--warn)!important}
 .medit .mnom{display:block;margin:8px 0 0;font-size:.72rem;color:var(--muted)}
 .medit .mnom input{display:block;width:100%;box-sizing:border-box;height:40px;border:1px solid var(--line);border-radius:10px;padding:0 10px;font:inherit;font-size:.9rem;background:#fff;margin-top:3px;color:var(--ink)}
+/* ---------- animations (règles de Pauline, 15/11/2026) ---------- */
+:root{--eo:cubic-bezier(.22,1,.36,1);--eio:cubic-bezier(.65,0,.35,1)} /* entrées : ease out ; déplacements : ease in out ; jamais de ressort */
+@media (prefers-reduced-motion:no-preference){
+  /* 4. boutons à 0,97 à l'appui */
+  button{transition:transform .12s var(--eo)}
+  button:active:not(:disabled){transform:scale(.97)}
+  /* 10-11, 13 : fenêtres qui naissent du point touché et y retournent ; sortie 20 % plus courte */
+  dialog{transform-origin:var(--ox,50%) var(--oy,50%);transition:opacity .22s var(--eo),transform .22s var(--eo),overlay .22s allow-discrete,display .22s allow-discrete}
+  dialog:not([open]){opacity:0;transform:scale(.9);transition-duration:.176s;transition-timing-function:var(--eio)}
+  @starting-style{dialog[open]{opacity:0;transform:scale(.9)}}
+  dialog::backdrop{transition:opacity .22s var(--eo),overlay .22s allow-discrete,display .22s allow-discrete}
+  dialog:not([open])::backdrop{opacity:0;transition-duration:.176s}
+  @starting-style{dialog[open]::backdrop{opacity:0}}
+  /* 9 : popovers à 0,95 ; 2 : menus déroulants en 200 ms */
+  .mpop{animation:pop .2s var(--eo) both;transform-origin:top right}
+  @keyframes pop{from{opacity:0;transform:scale(.95)}}
+  /* 15 : du poids aux révélations (contenu des replis) */
+  details[open]>:not(summary){animation:reveal .26s var(--eo) both}
+  @keyframes reveal{from{opacity:0;transform:translateY(-6px)}}
+  /* 3 : lignes décalées de 30 ms à l'entrée dans un onglet */
+  .enter{animation:rise .3s var(--eo) both;animation-delay:calc(var(--i,0) * 30ms)}
+  @keyframes rise{from{opacity:0;transform:translateY(10px)}}
+  /* 5-6 : le message arrive en courbe, étiré de 12 % pendant le mouvement */
+  #toast.on{animation:tin .28s var(--eo)}
+  @keyframes tin{0%{opacity:0;translate:18px 26px;scale:1 1.12}55%{opacity:1;translate:5px 6px;scale:1 1.05}100%{translate:0 0;scale:1 1}}
+  /* 7 : pulsation de réussite */
+  #toast.pulse{animation:tin .28s var(--eo),pulse .45s var(--eio) .28s}
+  .bravo .bart svg{animation:bpop .45s var(--eo),pulse .5s var(--eio) .45s}
+  @keyframes pulse{50%{scale:1.05}}
+  /* 16 : changement d'icône en fondu avec flou */
+  .chi svg,.mpen svg{animation:ico .2s var(--eo)}
+  @keyframes ico{from{opacity:0;filter:blur(3px)}}
+  /* 14, 18 : changement d'onglet en fondu enchaîné, la pastille de l'onglet actif glisse de l'un à l'autre */
+  #tabs button[aria-pressed=true] svg{view-transition-name:tabon}
+  ::view-transition-group(*){animation-duration:.26s;animation-timing-function:var(--eio)}
+  ::view-transition-old(root){animation-duration:.21s}
+  /* 8 : déplacements en ease in out */
+  .seg button,.stab,.sw i{transition:background-color .2s var(--eio),color .2s var(--eio),transform .2s var(--eio)}
+}
