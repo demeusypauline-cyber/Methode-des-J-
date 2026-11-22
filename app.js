@@ -12,8 +12,8 @@
   var NIV = ['Échec total', 'Beaucoup d’erreurs', 'Compréhension partielle', 'Compréhension correcte', 'Presque parfait', 'Maîtrise totale'];
   var JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
   var DEF = { intervalles: [2, 4, 10, 25, 35, 50, 70, 90, 110, 130, 150, 170], minutesDefaut: 5, debutExam: 50, seuilButoire: 15, butoireSi: 5, butoireSinon: 0, planning: [60, 60, 30, 180, 30, 180, 30], semestres: [], ordreSem: 'manuel', semOrdre: [], dashOrdre: [], dashCache: [], pasApres5: 20, oubliMin: 3 };
-  var data = { ex: [], mats: [], reglages: JSON.parse(JSON.stringify(DEF)) };
-  var view = (function () { try { if (!sessionStorage.getItem('mes-exercices-sess')) { sessionStorage.setItem('mes-exercices-sess', '1'); return 'dash'; } } catch (e) { /* ignoré */ } try { var v = localStorage.getItem('mes-exercices-onglet'); return ['dash', 'today', 'exos', 'mats', 'set'].indexOf(v) >= 0 ? v : 'today'; } catch (e) { return 'today'; } })(), editingId = null, doingId = null, shown = 120;
+  var data = { ex: [], mats: [], planning: { cats: [], items: [], objs: [], suppr: {} }, reglages: JSON.parse(JSON.stringify(DEF)) };
+  var view = (function () { try { if (!sessionStorage.getItem('mes-exercices-sess')) { sessionStorage.setItem('mes-exercices-sess', '1'); return 'dash'; } } catch (e) { /* ignoré */ } try { var v = localStorage.getItem('mes-exercices-onglet'); return ['dash', 'today', 'exos', 'mats', 'plan', 'set'].indexOf(v) >= 0 ? v : 'today'; } catch (e) { return 'today'; } })(), editingId = null, doingId = null, shown = 120;
 
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt !== undefined) e.textContent = txt; return e; }
@@ -58,7 +58,7 @@
     (function () { var cnt = {}; d.hist.sort(function (a, b) { return a.ts - b.ts; }).forEach(function (h) { if (!h.jour) return; var k = h.id + '|' + h.jour, n = cnt[k] || 0; cnt[k] = n + 1; h.ts = dnum(h.jour) * DAY + n; }); d.ex.forEach(function (x) { if (x.cree) x.cree = Math.floor(x.cree / DAY) * DAY; }); })();
     (function () { var by = {}; d.hist.sort(function (a, b) { return a.ts - b.ts; }).forEach(function (h) { (by[h.id] = by[h.id] || []).push(h); });
       Object.keys(by).forEach(function (id) { var run = 0; by[id].forEach(function (h) { if (h.avant && (h.avant.succes || 0) >= 5) h.avant.succes = run <= 1 ? 5 : 4 + run; run = h.niveau >= 5 ? run + 1 : 0; }); }); })();
-    return { ex: Array.isArray(d.ex) ? d.ex : [], mats: Array.isArray(d.mats) ? d.mats : [], hist: Array.isArray(d.hist) ? d.hist : [], jours: d.jours && typeof d.jours === 'object' ? d.jours : {}, ues: Array.isArray(d.ues) ? d.ues : [], corbeille: Array.isArray(d.corbeille) ? d.corbeille : [], chronos: d.chronos && typeof d.chronos === 'object' ? d.chronos : {}, renoms: Array.isArray(d.renoms) ? d.renoms : [], matsSuppr: Array.isArray(d.matsSuppr) ? d.matsSuppr : [], reglages: r };
+    return { ex: Array.isArray(d.ex) ? d.ex : [], mats: Array.isArray(d.mats) ? d.mats : [], hist: Array.isArray(d.hist) ? d.hist : [], jours: d.jours && typeof d.jours === 'object' ? d.jours : {}, ues: Array.isArray(d.ues) ? d.ues : [], corbeille: Array.isArray(d.corbeille) ? d.corbeille : [], chronos: d.chronos && typeof d.chronos === 'object' ? d.chronos : {}, planning: normPlan(d.planning), renoms: Array.isArray(d.renoms) ? d.renoms : [], matsSuppr: Array.isArray(d.matsSuppr) ? d.matsSuppr : [], reglages: r };
   }
   function load() { try { var raw = localStorage.getItem(KEY); if (raw) data = fix(JSON.parse(raw)); } catch (e) { /* départ à vide */ } }
   function save() {
@@ -1639,6 +1639,10 @@
     var used = {}; base.ex.concat(base.corbeille.map(function (c) { return c.ex; })).forEach(function (x) { used[x.semestre + '|' + x.matiere] = 1; }); var seenM = {};
     base.mats = base.mats.filter(function (m) { var k = m.semestre + '|' + m.nom; if (seenM[k]) return false; seenM[k] = 1; return used[k] || !base.matsSuppr.some(function (g) { return g.k === k && g.t > (m.cree || 0); }); });
     base.chronos = base.chronos || {}; var och = oth.chronos || {}; Object.keys(och).forEach(function (id) { var y = base.chronos[id]; if (!y || (och[id].t || 0) > (y.t || 0)) base.chronos[id] = och[id]; });
+    (function () { var bp = normPlan(base.planning), op = normPlan(oth.planning); bp.suppr = Object.assign({}, op.suppr, bp.suppr);
+      ['cats', 'items', 'objs'].forEach(function (k) { var bi = {}; bp[k].forEach(function (z) { bi[z.id] = z; }); op[k].forEach(function (z) { var y = bi[z.id]; if (!y) { bp[k].push(z); bi[z.id] = z; } else if (k === 'items') { y.ok = Object.assign({}, z.ok, y.ok); y.sk = Object.assign({}, z.sk, y.sk); } });
+        if (k !== 'cats') bp[k] = bp[k].filter(function (z) { return !bp.suppr[z.id]; }); });
+      base.planning = bp; })();
     return base;
   }
   function syncLabel() {
@@ -1674,14 +1678,227 @@
   function syncSoon() { clearTimeout(syncTimer); syncTimer = setTimeout(syncAuto, 4000); }
 
   /* ---------- affichage ---------- */
+
+  /* ---------- onglet Planning : jour, semaine, mois, année ---------- */
+  var PLC = ['#ad1457', '#e58aa8', '#9c6bb5', '#6d3b5e', '#6aa38a', '#e8a37a', '#7c9fc9', '#9a8a92'];
+  var PLDEF = ['Études', 'Révisions', 'Langues', 'Projets', 'Association', 'Création', 'Sport', 'Temps libre'];
+  var PLP = { f: 'Obligatoire', i: 'Important', o: 'Facultatif' }, PLJ = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
+  var plV = 'jour', plD = null;
+  function normPlan(p) { p = p && typeof p === 'object' ? p : {}; return { cats: Array.isArray(p.cats) ? p.cats : [], items: Array.isArray(p.items) ? p.items : [], objs: Array.isArray(p.objs) ? p.objs : [], suppr: p.suppr && typeof p.suppr === 'object' ? p.suppr : {} }; }
+  function pld() { var p = data.planning; if (!p.cats.length) p.cats = PLDEF.map(function (n, i) { return { id: 'c' + i, nom: n, col: PLC[i] }; }); return p; }
+  function plCat(id) { return pld().cats.filter(function (c) { return c.id === id; })[0] || { id: '', nom: 'Sans catégorie', col: '#9a8a92' }; }
+  function plD0() { return plD === null ? TODAY() : plD; }
+  function wd(n) { return (n + 3) % 7; }
+  function pad2(n) { return ('0' + n).slice(-2); }
+  function isoOf(n) { var d = new Date(n * DAY); return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()); }
+  function dlab(n, o) { return new Date(n * DAY).toLocaleDateString('fr-FR', Object.assign({ timeZone: 'UTC' }, o)); }
+  function fm(m) { m = Math.round(m); return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h' + (m % 60 ? pad2(m % 60) : ''); }
+  function endT(h, m) { var t = +h.slice(0, 2) * 60 + +h.slice(3, 5) + (m || 0); t = t % 1440; return pad2(Math.floor(t / 60)) + ':' + pad2(t % 60); }
+  function plOcc(n) {
+    var iso = isoOf(n), out = [];
+    pld().items.forEach(function (it) {
+      if (it.sk && it.sk[iso]) return;
+      if (it.w && it.w.length) { if (it.w.indexOf(wd(n)) >= 0 && (!it.from || iso >= it.from)) out.push(it); } else if (it.d === iso) out.push(it);
+    });
+    out.sort(function (a, b) { return (a.h || '99').localeCompare(b.h || '99'); }); return out;
+  }
+  function plIsDone(it, iso) { return !!(it.ok && it.ok[iso]); }
+  function plExams(iso) { return data.mats.filter(function (m) { return m.examen === iso; }); }
+  function plMin(cat, a, b, onlyDone) { var t = 0; for (var n = a; n <= b; n++) { var iso = isoOf(n); plOcc(n).forEach(function (it) { if ((!cat || it.c === cat) && (!onlyDone || plIsDone(it, iso))) t += it.m || 0; }); } return t; }
+  function plDo(msg, fn) { var s = JSON.stringify(data.planning); fn(); save(); render(); toast(msg, function () { data.planning = normPlan(JSON.parse(s)); save(); render(); }); }
+  function plToggle(it, iso) { plDo(plIsDone(it, iso) ? 'Décoché.' : 'Fait, bravo !', function () { it.ok = it.ok || {}; if (it.ok[iso]) delete it.ok[iso]; else it.ok[iso] = 1; }); }
+
+  function plForm(o) {
+    var d = $('plDlg'), f = $('plForm'); f.textContent = ''; f.appendChild(el('h2', '', o.t));
+    var ctr = {}, wraps = {};
+    function vals() { var v = {}; Object.keys(ctr).forEach(function (k) { var c = ctr[k]; v[k] = c.get ? c.get() : c.value; }); return v; }
+    function upd() { var v = vals(); o.f.forEach(function (x) { if (x.when) wraps[x.k].hidden = v[x.when[0]] !== x.when[1]; }); }
+    (o.f || []).forEach(function (x) {
+      var w = x.type === 'days' ? el('div', 'pdw') : el('label'), inp;
+      w.appendChild(x.type === 'days' ? el('div', 'pdl', x.l) : document.createTextNode(x.l));
+      if (x.type === 'select') { inp = el('select'); x.o.forEach(function (op) { var e = el('option', '', op[1]); e.value = op[0]; inp.appendChild(e); }); inp.value = x.v; }
+      else if (x.type === 'days') { inp = el('div', 'pdays'); PLJ.forEach(function (j, i) { var b = el('button', '', j.slice(0, 3)); b.type = 'button'; b.setAttribute('aria-pressed', (x.v || []).indexOf(i) >= 0 ? 'true' : 'false'); b.addEventListener('click', function () { b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true'); }); inp.appendChild(b); }); inp.get = function () { var r = []; Array.prototype.forEach.call(inp.children, function (b, i) { if (b.getAttribute('aria-pressed') === 'true') r.push(i); }); return r; }; }
+      else { inp = el('input'); inp.type = x.type; inp.autocomplete = 'off'; if (x.v !== undefined) inp.value = x.v; if (x.type === 'number') { inp.min = 0; inp.step = x.step || 1; inp.inputMode = 'decimal'; } }
+      inp.addEventListener('change', upd); w.appendChild(inp); f.appendChild(w); ctr[x.k] = inp; wraps[x.k] = w;
+    });
+    upd();
+    var act = el('div', 'actions');
+    (o.extra || []).forEach(function (x) { var b = el('button', x.cls || 'plain', x.l); b.type = 'button'; b.addEventListener('click', function () { d.close(); x.fn(); }); act.appendChild(b); });
+    act.appendChild(el('span', 'grow'));
+    var no = el('button', 'plain', 'Annuler'); no.type = 'button'; no.addEventListener('click', function () { d.close(); }); act.appendChild(no);
+    var ok = el('button', 'primary', 'Enregistrer'); ok.type = 'submit'; act.appendChild(ok); f.appendChild(act);
+    f.onsubmit = function (e) { e.preventDefault(); var v = vals(); if (o.ok(v) !== false) d.close(); };
+    d.showModal();
+  }
+  function plCatOpts() { return pld().cats.map(function (c) { return [c.id, c.nom]; }); }
+  function plEdit(it, iso) {
+    var p = pld(), nw = !it, rec = it && it.w && it.w.length; iso = iso || isoOf(plD0());
+    var x = it || { id: newId(), t: '', c: p.cats[0].id, p: 'i', h: '', m: 60, ok: {}, sk: {} };
+    var ex = [];
+    if (!nw) {
+      ex.push({ l: 'Dupliquer', fn: function () { plDo('Dupliquée.', function () { var c = JSON.parse(JSON.stringify(x)); c.id = newId(); c.ok = {}; c.sk = {}; p.items.push(c); }); } });
+      ex.push({ l: 'Reporter à demain', fn: function () { plDo('Reportée à demain.', function () { if (rec) { x.sk = x.sk || {}; x.sk[iso] = 1; var c = JSON.parse(JSON.stringify(x)); c.id = newId(); delete c.w; delete c.from; c.ok = {}; c.sk = {}; c.d = isoOf(dnum(iso) + 1); p.items.push(c); } else x.d = isoOf(dnum(iso) + 1); }); } });
+      if (rec) ex.push({ l: 'Ignorer ce jour', fn: function () { plDo('Ce jour est ignoré.', function () { x.sk = x.sk || {}; x.sk[iso] = 1; }); } });
+      ex.push({ l: 'Supprimer', cls: 'danger', fn: function () { ask({ t: 'Supprimer ?', p: rec ? 'Toute la série sera supprimée.' : '', ok: 'Supprimer', danger: true }, function () { plDo('Supprimée.', function () { p.items = p.items.filter(function (z) { return z.id !== x.id; }); p.suppr[x.id] = Date.now(); }); }); } });
+    }
+    plForm({
+      t: nw ? 'Nouvelle tâche' : 'Modifier', extra: ex,
+      f: [{ k: 't', l: 'Titre', type: 'text', v: x.t }, { k: 'c', l: 'Catégorie', type: 'select', o: plCatOpts(), v: x.c }, { k: 'p', l: 'Priorité', type: 'select', o: [['f', 'Obligatoire'], ['i', 'Important'], ['o', 'Facultatif']], v: x.p },
+        { k: 'r', l: 'Répétition', type: 'select', o: [['1', 'Une seule fois'], ['w', 'Chaque semaine']], v: rec ? 'w' : '1' },
+        { k: 'd', l: 'Jour', type: 'date', v: x.d || iso, when: ['r', '1'] }, { k: 'w', l: 'Les jours', type: 'days', v: x.w || [wd(dnum(iso))], when: ['r', 'w'] }, { k: 'from', l: 'À partir du', type: 'date', v: x.from || iso, when: ['r', 'w'] },
+        { k: 'h', l: 'Heure (facultatif)', type: 'time', v: x.h || '' }, { k: 'm', l: 'Durée en minutes', type: 'number', v: x.m || 0 }],
+      ok: function (v) {
+        if (!v.t.trim()) { toast('Donne un titre à la tâche.'); return false; }
+        if (v.r === 'w' && !v.w.length) { toast('Choisis au moins un jour.'); return false; }
+        plDo('Enregistrée.', function () {
+          x.t = v.t.trim(); x.c = v.c; x.p = v.p; x.h = v.h; x.m = Math.max(0, +v.m || 0);
+          if (v.r === 'w') { x.w = v.w; x.from = v.from || iso; delete x.d; } else { x.d = v.d || iso; delete x.w; delete x.from; }
+          if (nw) p.items.push(x);
+        });
+      }
+    });
+  }
+  function plObjEdit(o) {
+    var p = pld(), nw = !o; o = o || { id: newId(), t: '', c: '', per: 's', cible: 180 };
+    plForm({
+      t: nw ? 'Nouvel objectif' : 'Modifier l’objectif',
+      extra: nw ? [] : [{ l: 'Supprimer', cls: 'danger', fn: function () { plDo('Objectif supprimé.', function () { p.objs = p.objs.filter(function (z) { return z.id !== o.id; }); p.suppr[o.id] = Date.now(); }); } }],
+      f: [{ k: 't', l: 'Nom (ex. : Anglais)', type: 'text', v: o.t }, { k: 'c', l: 'Catégorie suivie', type: 'select', o: [['', 'Toutes les catégories']].concat(plCatOpts()), v: o.c }, { k: 'per', l: 'Période', type: 'select', o: [['s', 'Par semaine'], ['m', 'Par mois']], v: o.per }, { k: 'h', l: 'Objectif en heures', type: 'number', step: .5, v: o.cible / 60 }],
+      ok: function (v) { if (!v.t.trim() || !(+v.h > 0)) { toast('Mets un nom et un objectif en heures.'); return false; } plDo('Objectif enregistré.', function () { o.t = v.t.trim(); o.c = v.c; o.per = v.per; o.cible = Math.round(+v.h * 60); if (nw) p.objs.push(o); }); }
+    });
+  }
+  function plCatsDlg() {
+    var d = $('plDlg'), f = $('plForm'), p = pld(); f.textContent = ''; f.onsubmit = function (e) { e.preventDefault(); d.close(); };
+    f.appendChild(el('h2', '', 'Catégories'));
+    function rows() {
+      var box = f.querySelector('.pcats'); if (box) box.remove(); box = el('div', 'pcats');
+      p.cats.forEach(function (c) {
+        var r = el('div', 'pcrow'), col = el('input'); col.type = 'color'; col.value = c.col; col.setAttribute('aria-label', 'Couleur'); col.addEventListener('change', function () { c.col = col.value; save(); });
+        var nm = el('input'); nm.value = c.nom; nm.setAttribute('aria-label', 'Nom'); nm.addEventListener('change', function () { if (nm.value.trim()) { c.nom = nm.value.trim(); save(); } else nm.value = c.nom; });
+        var del = el('button', 'xbtn', '×'); del.type = 'button'; del.setAttribute('aria-label', 'Supprimer'); del.addEventListener('click', function () {
+          var n = p.items.filter(function (z) { return z.c === c.id; }).length; if (n) { toast('Utilisée par ' + n + ' tâche' + (n > 1 ? 's' : '') + ' : change d’abord leur catégorie.'); return; } if (p.cats.length < 2) return;
+          p.cats = p.cats.filter(function (z) { return z !== c; }); save(); rows();
+        });
+        r.appendChild(col); r.appendChild(nm); r.appendChild(del); box.appendChild(r);
+      });
+      f.insertBefore(box, f.querySelector('.actions'));
+    }
+    var act = el('div', 'actions'), add = el('button', 'plain', '+ Catégorie'); add.type = 'button'; add.addEventListener('click', function () { p.cats.push({ id: newId(), nom: 'Nouvelle', col: PLC[p.cats.length % PLC.length] }); save(); rows(); });
+    act.appendChild(add); act.appendChild(el('span', 'grow')); var ok = el('button', 'primary', 'Terminé'); ok.type = 'submit'; act.appendChild(ok); f.appendChild(act); rows();
+    d.onclose = function () { d.onclose = null; render(); }; d.showModal();
+  }
+
+  function plNav(box, label, prev, next, today, showToday) {
+    var n = el('div', 'pnav'), a = el('button', 'pn', '‹'), b = el('button', 'pn', '›'), t = el('div', 'pnl', label);
+    a.type = 'button'; b.type = 'button'; a.setAttribute('aria-label', 'Précédent'); b.setAttribute('aria-label', 'Suivant'); a.addEventListener('click', prev); b.addEventListener('click', next);
+    n.appendChild(a); n.appendChild(t); n.appendChild(b); box.appendChild(n);
+    if (showToday) { var tb = el('button', 'plain ptoday', 'Revenir à aujourd’hui'); tb.type = 'button'; tb.addEventListener('click', today); box.appendChild(tb); }
+  }
+  function plBlock(it, iso, compact) {
+    var c = plCat(it.c), dn = plIsDone(it, iso), b = el('div', 'pblk p' + (it.p || 'i') + (dn ? ' done' : '')); b.style.setProperty('--pc', c.col);
+    if (!compact && it.m > 0) b.style.minHeight = Math.min(150, Math.max(58, it.m * 1.1)) + 'px';
+    var ck = el('button', 'pck'); ck.type = 'button'; ck.setAttribute('aria-pressed', dn ? 'true' : 'false'); ck.setAttribute('aria-label', dn ? 'Décocher' : 'Cocher'); ck.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>';
+    ck.addEventListener('click', function (e) { e.stopPropagation(); plToggle(it, iso); });
+    var bd = el('div', 'pbd'); bd.appendChild(el('div', 'ptt', it.t));
+    var meta = [it.h ? it.h + ' – ' + endT(it.h, it.m) : '', it.m ? fm(it.m) : '', c.nom, PLP[it.p || 'i']].filter(Boolean).join(' · '); bd.appendChild(el('div', 'pmeta', meta));
+    b.appendChild(ck); b.appendChild(bd); b.addEventListener('click', function () { plEdit(it, iso); }); return b;
+  }
+  function plExamBlk(m) { var b = el('div', 'pblk pf pex'); b.style.setProperty('--pc', '#ad1457'); var bd = el('div', 'pbd'); bd.appendChild(el('div', 'ptt', 'Examen : ' + m.nom)); bd.appendChild(el('div', 'pmeta', m.semestre)); b.appendChild(bd); return b; }
+  function plObjs(box, per, a, b, titre) {
+    var p = pld(), os = p.objs.filter(function (o) { return o.per === per; }), c = el('div', 'card'); c.appendChild(el('h2', '', titre));
+    if (!os.length) c.appendChild(el('div', 'muted', 'Aucun objectif. Ajoute par exemple « Anglais : 3 h par semaine ».'));
+    os.forEach(function (o) {
+      var done = plMin(o.c, a, b, true), plan = plMin(o.c, a, b, false), pc = Math.min(100, Math.round(done / o.cible * 100)), ct = plCat(o.c), r = el('div', 'pobj'); r.style.setProperty('--pc', o.c ? ct.col : '#ad1457');
+      r.appendChild(el('div', 'pot', o.t + ' · ' + fm(done) + ' sur ' + fm(o.cible)));
+      var bar = el('div', 'bar'), fl = el('i'); fl.style.width = pc + '%'; fl.style.background = 'var(--pc)'; bar.appendChild(fl); r.appendChild(bar);
+      r.appendChild(el('div', 'pmeta', plan >= o.cible ? 'Prévu au planning : ' + fm(plan) : 'Prévu au planning : ' + fm(plan) + ' (il manque ' + fm(o.cible - plan) + ')'));
+      r.addEventListener('click', function () { plObjEdit(o); }); c.appendChild(r);
+    });
+    var ad = el('button', 'plain', '+ Objectif'); ad.type = 'button'; ad.addEventListener('click', function () { plObjEdit(null); }); c.appendChild(ad); box.appendChild(c);
+  }
+
+  function plJour(box) {
+    var n = plD0(), iso = isoOf(n), list = plOcc(n), T = TODAY();
+    plNav(box, dlab(n, { weekday: 'long', day: 'numeric', month: 'long' }), function () { plD = n - 1; render(); }, function () { plD = n + 1; render(); }, function () { plD = null; render(); }, n !== T);
+    var dn = list.filter(function (it) { return plIsDone(it, iso); }), tot = 0, fait = 0; list.forEach(function (it) { tot += it.m || 0; if (plIsDone(it, iso)) fait += it.m || 0; });
+    var h = el('div', 'card'), pc = list.length ? Math.round(dn.length / list.length * 100) : 0;
+    h.appendChild(el('h2', '', list.length ? dn.length + ' sur ' + list.length + ' faites · ' + pc + ' %' : 'Journée libre'));
+    var bar = el('div', 'bar'), fl = el('i'); fl.style.width = pc + '%'; bar.appendChild(fl); h.appendChild(bar);
+    if (list.length) h.appendChild(el('div', 'muted', 'Prévu : ' + fm(tot) + ' · fait : ' + fm(fait) + ' · reste : ' + fm(tot - fait)));
+    box.appendChild(h);
+    plExams(iso).forEach(function (m) { box.appendChild(plExamBlk(m)); });
+    if (n === T) {
+      var P = plan(), inP = P.list.filter(function (o) { return o.in; }), tm = 0; inP.forEach(function (o) { tm += mins(o.x); });
+      var rv = el('div', 'card prev'); rv.appendChild(el('h2', '', 'Révisions (méthode des J)'));
+      rv.appendChild(el('div', 'muted', inP.length ? inP.length + ' exercice' + (inP.length > 1 ? 's' : '') + ' · ' + fm(tm) + ' prévues · déjà fait : ' + fm(P.fait) : 'Rien à réviser pour l’instant · déjà fait : ' + fm(P.fait)));
+      var go = el('button', 'plain', 'Ouvrir « À faire »'); go.type = 'button'; go.addEventListener('click', function () { view = 'today'; render(); window.scrollTo(0, 0); }); rv.appendChild(go); box.appendChild(rv);
+    }
+    if (list.length && dn.length === list.length) box.appendChild(bravoCard('Journée terminée, bravo !'));
+    var timed = list.filter(function (it) { return it.h; }), free = list.filter(function (it) { return !it.h; });
+    if (timed.length) { var tl = el('div', 'ptl'); timed.forEach(function (it) { var r = el('div', 'ptr'); r.appendChild(el('div', 'pth', it.h)); r.appendChild(plBlock(it, iso)); tl.appendChild(r); }); box.appendChild(tl); }
+    if (free.length) { box.appendChild(el('div', 'ptitle', 'Dans la journée')); free.forEach(function (it) { box.appendChild(plBlock(it, iso)); }); }
+    if (!list.length) box.appendChild(el('p', 'muted', 'Rien de prévu. Touche le bouton + pour ajouter une tâche.'));
+  }
+  function plSem(box) {
+    var n = plD0(), mon = n - wd(n), T = TODAY();
+    plNav(box, dlab(mon, { day: 'numeric', month: 'short' }) + ' – ' + dlab(mon + 6, { day: 'numeric', month: 'short' }), function () { plD = n - 7; render(); }, function () { plD = n + 7; render(); }, function () { plD = null; render(); }, !(T >= mon && T <= mon + 6));
+    for (var i = 0; i < 7; i++) (function (dn) {
+      var iso = isoOf(dn), list = plOcc(dn), card = el('div', 'card pday' + (dn === T ? ' today' : '')), hd = el('button', 'pdh'); hd.type = 'button';
+      var d = list.filter(function (it) { return plIsDone(it, iso); }).length;
+      hd.appendChild(el('b', '', dlab(dn, { weekday: 'long', day: 'numeric' }))); hd.appendChild(el('span', 'muted', list.length ? d + '/' + list.length : '—'));
+      hd.addEventListener('click', function () { plD = dn; plV = 'jour'; render(); window.scrollTo(0, 0); }); card.appendChild(hd);
+      plExams(iso).forEach(function (m) { card.appendChild(el('div', 'pchip pex', 'Examen : ' + m.nom)); });
+      list.forEach(function (it) { var c = plCat(it.c), r = el('div', 'pchip' + (plIsDone(it, iso) ? ' done' : '')); r.style.setProperty('--pc', c.col); r.textContent = (it.h ? it.h + ' ' : '') + it.t; r.addEventListener('click', function () { plEdit(it, iso); }); card.appendChild(r); });
+      box.appendChild(card);
+    })(mon + i);
+    plObjs(box, 's', mon, mon + 6, 'Objectifs de la semaine');
+  }
+  function plMois(box) {
+    var n = plD0(), dt = new Date(n * DAY), y = dt.getUTCFullYear(), m = dt.getUTCMonth(), first = Date.UTC(y, m, 1) / DAY, last = Date.UTC(y, m + 1, 0) / DAY, T = TODAY();
+    plNav(box, dlab(first, { month: 'long', year: 'numeric' }), function () { plD = Date.UTC(y, m - 1, 1) / DAY; render(); }, function () { plD = Date.UTC(y, m + 1, 1) / DAY; render(); }, function () { plD = null; render(); }, !(T >= first && T <= last));
+    var g = el('div', 'pgrid'); PLJ.forEach(function (j) { g.appendChild(el('div', 'pgh', j.slice(0, 1).toUpperCase())); });
+    for (var k = 0; k < wd(first); k++) g.appendChild(el('div'));
+    for (var dn = first; dn <= last; dn++) (function (dn) {
+      var iso = isoOf(dn), b = el('button', 'pcell' + (dn === n ? ' sel' : '') + (dn === T ? ' today' : '')); b.type = 'button'; b.appendChild(el('span', '', String(dn - first + 1)));
+      var dots = el('i', 'pdots'), seen = {}; plOcc(dn).forEach(function (it) { if (!seen[it.c] && Object.keys(seen).length < 4) { seen[it.c] = 1; var s = el('s'); s.style.background = plCat(it.c).col; dots.appendChild(s); } });
+      if (plExams(iso).length) { var f = el('s', 'ex'); dots.appendChild(f); } b.appendChild(dots);
+      b.addEventListener('click', function () { plD = dn; render(); }); g.appendChild(b);
+    })(dn);
+    var gc = el('div', 'card'); gc.appendChild(g); box.appendChild(gc);
+    var iso = isoOf(n), list = plOcc(n), dc = el('div', 'card'); dc.appendChild(el('h2', '', dlab(n, { weekday: 'long', day: 'numeric', month: 'long' })));
+    plExams(iso).forEach(function (e) { dc.appendChild(plExamBlk(e)); }); list.forEach(function (it) { dc.appendChild(plBlock(it, iso, true)); });
+    if (!list.length && !plExams(iso).length) dc.appendChild(el('div', 'muted', 'Rien de prévu ce jour-là.'));
+    var op = el('button', 'plain', 'Ouvrir la journée'); op.type = 'button'; op.addEventListener('click', function () { plV = 'jour'; render(); window.scrollTo(0, 0); }); dc.appendChild(op); box.appendChild(dc);
+    plObjs(box, 'm', first, last, 'Objectifs du mois');
+  }
+  function plAn(box) {
+    var n = plD0(), y = new Date(n * DAY).getUTCFullYear(), T = TODAY();
+    plNav(box, String(y), function () { plD = Date.UTC(y - 1, 0, 1) / DAY; render(); }, function () { plD = Date.UTC(y + 1, 0, 1) / DAY; render(); }, function () { plD = null; render(); }, new Date(T * DAY).getUTCFullYear() !== y);
+    var grid = el('div', 'pyear');
+    for (var m = 0; m < 12; m++) (function (m) {
+      var first = Date.UTC(y, m, 1) / DAY, last = Date.UTC(y, m + 1, 0) / DAY, c = el('button', 'card pmon'); c.type = 'button'; c.appendChild(el('b', '', dlab(first, { month: 'long' })));
+      var g = el('div', 'pmg'), nb = 0, dn0 = 0; for (var k = 0; k < wd(first); k++) g.appendChild(el('i'));
+      for (var d = first; d <= last; d++) { var l = plOcc(d), t = 0, dd = 0, iso = isoOf(d); l.forEach(function (it) { t += it.m || 0; if (plIsDone(it, iso)) dd++; }); nb += l.length; dn0 += dd; var e = el('i', 'l' + (t === 0 ? 0 : t < 60 ? 1 : t < 180 ? 2 : t < 360 ? 3 : 4)); if (plExams(iso).length) e.className += ' ex'; if (d === T) e.className += ' td'; g.appendChild(e); }
+      c.appendChild(g); c.appendChild(el('span', 'muted', nb ? nb + ' tâche' + (nb > 1 ? 's' : '') + ' · ' + Math.round(dn0 / nb * 100) + ' % faites' : 'Rien de prévu'));
+      c.addEventListener('click', function () { plD = first <= T && T <= last ? T : first; plV = 'mois'; render(); window.scrollTo(0, 0); }); grid.appendChild(c);
+    })(m);
+    box.appendChild(grid);
+  }
+  function renderPlan() {
+    var box = $('v-plan'); box.textContent = ''; pld();
+    var seg = el('div', 'pseg'); [['jour', 'Jour'], ['semaine', 'Semaine'], ['mois', 'Mois'], ['annee', 'Année']].forEach(function (v) { var b = el('button', '', v[1]); b.type = 'button'; b.setAttribute('aria-pressed', plV === v[0] ? 'true' : 'false'); b.addEventListener('click', function () { plV = v[0]; render(); }); seg.appendChild(b); });
+    box.appendChild(seg); ({ jour: plJour, semaine: plSem, mois: plMois, annee: plAn })[plV](box);
+    var cb = el('button', 'plain pcatb', 'Catégories et couleurs'); cb.type = 'button'; cb.addEventListener('click', plCatsDlg); box.appendChild(cb);
+  }
+
   function render() {
     DEC = null; resetCaches();
     renderFilters(); document.body.classList.toggle('wide', view === 'dash' || view === 'set');
-    ['today', 'exos', 'mats', 'dash', 'set'].forEach(function (v) { $('v-' + v).hidden = v !== view; });
+    ['today', 'exos', 'mats', 'plan', 'dash', 'set'].forEach(function (v) { $('v-' + v).hidden = v !== view; });
     document.querySelectorAll('#tabs button').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.view === view ? 'true' : 'false'); });
-    $('addBtn').hidden = view !== 'exos';
+    $('addBtn').hidden = view !== 'exos' && view !== 'plan'; $('addBtn').setAttribute('aria-label', view === 'plan' ? 'Ajouter une tâche' : 'Ajouter un exercice');
     if ($('examDlg').open) renderExamView();
-    if (view === 'today') renderToday(); else if (view === 'exos') renderExos(); else if (view === 'mats') renderMats(); else if (view === 'dash') renderDash(); else renderSet();
+    if (view === 'today') renderToday(); else if (view === 'exos') renderExos(); else if (view === 'mats') renderMats(); else if (view === 'dash') renderDash(); else if (view === 'plan') renderPlan(); else renderSet();
   }
 
   /* garde la position de défilement (page, listes, graphiques, grille) quand on change un filtre ou un affichage */
@@ -1708,13 +1925,13 @@
   function enterAnim() { var sec = document.querySelector('main > section:not([hidden])'); if (!sec) return; var i = 0; sec.querySelectorAll(':scope > .card, :scope > .dcard, :scope > .mcard2, :scope > .ueblk, #exoList > .card').forEach(function (c) { if (i < 14) { c.style.setProperty('--i', i++); c.classList.add('enter'); setTimeout(function () { c.classList.remove('enter'); }, 900); } }); }
   function swapView(fn) { if (document.startViewTransition && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) document.startViewTransition(function () { fn(); }); else fn(); }
   document.querySelectorAll('#tabs button').forEach(function (b) { b.addEventListener('click', function () { window._hkOff = 1; try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { /* sans vibration */ } view = b.dataset.view; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } shown = 120; window._top = 1; swapView(function () { render(); window.scrollTo(0, 0); enterAnim(); }); }); });
-  $('addBtn').addEventListener('click', function () { openEditor(null); });
+  $('addBtn').addEventListener('click', function () { if (view === 'plan') plEdit(null); else openEditor(null); });
   $('search').addEventListener('input', function () { shown = 120; renderExos(); });
   $('filtBtn').addEventListener('click', function () { $('filtDlg').showModal(); });
   $('examBack').addEventListener('click', function () { $('examDlg').close(); });
   $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
   $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; data.reglages.matieres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 196'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 197'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('dataBtn').addEventListener('click', function () { $('menu').close(); view = 'set'; setTab = 'donnees'; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } window._top = 1; render(); window.scrollTo(0, 0); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
