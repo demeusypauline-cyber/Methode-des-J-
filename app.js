@@ -62,7 +62,8 @@
   }
   function load() { try { var raw = localStorage.getItem(KEY); if (raw) data = fix(JSON.parse(raw)); } catch (e) { /* départ à vide */ } }
   function save() {
-    resetCaches(); try { localStorage.setItem(KEY, JSON.stringify(data)); localStorage.setItem(KEY + '-modif', String(Date.now())); syncSoon(); return true; }
+    resetCaches(); try { if (data.chronos && Object.keys(data.chronos).length) chMirror(); } catch (e) { /* ignoré */ }
+    try { localStorage.setItem(KEY, JSON.stringify(data)); localStorage.setItem(KEY + '-modif', String(Date.now())); syncSoon(); return true; }
     catch (e) { toast('Impossible d’enregistrer (stockage plein ou bloqué).'); return false; }
   }
 
@@ -267,6 +268,32 @@
     Object.keys(st).forEach(function (id) { if (!st[id].gone && !o[id]) st[id] = { gone: 1, t: now }; });
     save();
   }
+  /* ---- chrono en arrière-plan ----
+     Une copie des minuteurs est gardée dans IndexedDB ; le service worker la lit pour afficher une notification (Pause / Reprendre / Remettre à zéro)
+     quand l'appli est fermée ou en arrière-plan, et la modifie quand tu touche un bouton. Au retour dans l'appli, la copie la plus récente l'emporte. */
+  function idbOpen() { return new Promise(function (ok, ko) { var r = indexedDB.open('mes-exercices-sw', 1); r.onupgradeneeded = function () { r.result.createObjectStore('kv'); }; r.onsuccess = function () { ok(r.result); }; r.onerror = function () { ko(r.error); }; }); }
+  function idbGet(k) { return idbOpen().then(function (db) { return new Promise(function (ok, ko) { var q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = function () { ok(q.result); }; q.onerror = function () { ko(q.error); }; }); }); }
+  function idbPut(k, v) { return idbOpen().then(function (db) { return new Promise(function (ok, ko) { var tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').put(v, k); tx.oncomplete = function () { ok(); }; tx.onerror = function () { ko(tx.error); }; }); }); }
+  function chMirror() {
+    var map = {}, st = data.chronos || {};
+    Object.keys(st).forEach(function (id) {
+      var c = st[id]; if (!c) return; if (c.gone) { map[id] = { gone: 1, t: c.t || 0 }; return; }
+      var x = data.ex.filter(function (e) { return e.id === id; })[0];
+      map[id] = { acc: c.acc || 0, start: c.start || null, t: c.t || 0, titre: x ? x.matiere + (x.intitule ? ' · ' + x.intitule : '') : 'Exercice', min: x ? mins(x) : 0 };
+    });
+    return idbPut('chronos', map).catch(function () { /* IndexedDB indisponible */ });
+  }
+  function chPull() {
+    return idbGet('chronos').then(function (map) {
+      if (!map) return; var ch = false; data.chronos = data.chronos || {};
+      Object.keys(map).forEach(function (id) { var n = map[id], c = data.chronos[id]; if (!c || (n.t || 0) > (c.t || 0)) { data.chronos[id] = n.gone ? { gone: 1, t: n.t } : { acc: n.acc || 0, start: n.start || null, t: n.t || 0 }; ch = true; } });
+      if (ch) { save(); render(); }
+    }).catch(function () { /* ignoré */ });
+  }
+  function chNotify(show) {
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.ready.then(function (r) { if (r.active) r.active.postMessage({ type: 'chrono-notif', show: show }); }).catch(function () { /* ignoré */ });
+  }
   function chMs(c) { return c ? (c.acc || 0) + (c.start ? Date.now() - c.start : 0) : 0; }
   function chFmt(ms) { var t = Math.floor(ms / 1000), h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), sec = t % 60; return (h ? h + ':' + ('0' + m).slice(-2) : ('0' + m).slice(-2)) + ':' + ('0' + sec).slice(-2); }
   var CHI = { watch: '<circle cx="12" cy="13.5" r="7.5"/><path d="M12 9.5v4l2.5 1.5M9.5 3h5M12 3v3M18.2 6.8l1.2-1.2"/>', pause: '<path d="M9 6v12M15 6v12"/>', play: '<path d="M8 5.5v13l10-6.5Z"/>', x: '<path d="M7 7l10 10M17 7L7 17"/>', check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>', skip: '<path d="M5 12h12M13 7l5 5-5 5"/>', back: '<path d="M19 12H7M11 7l-5 5 5 5"/>' };
@@ -277,7 +304,7 @@
     function redo() { var n = chronoEl(id); box.replaceWith(n); }
     if (!c) {
       var b = el('button', 'chgo'); b.type = 'button'; b.appendChild(chSvg('watch', 14)); b.appendChild(document.createTextNode(chShow(id, 0).t)); b.title = 'Minuteur';
-      b.addEventListener('click', function (e) { e.stopPropagation(); var a = chGetAll(); a[id] = { acc: 0, start: Date.now() }; chSetAll(a); redo(); });
+      b.addEventListener('click', function (e) { e.stopPropagation(); try { if (window.Notification && Notification.permission === 'default') Notification.requestPermission(); } catch (er) { /* ignoré */ } var a = chGetAll(); a[id] = { acc: 0, start: Date.now() }; chSetAll(a); redo(); });
       box.appendChild(b); return box;
     }
     var sh = chShow(id, chMs(c)); box.className = 'chrono on' + (c.start ? ' run' : '') + (sh.over ? ' over' : '');
@@ -321,7 +348,7 @@
   /* tous les exos du jour faits : félicitations écrites à la main, avec un bouquet dessiné */
   var BRAVO = ['Bravo, tout est fait pour aujourd’hui !', 'Journée réussie, bravo !', 'Tout est révisé, tu peux être fière de toi !', 'Mission du jour accomplie !'];
   function bravoCard(txt) {
-    var c = el('div', 'card bravo'), f = '<path d="M0 -9C5 -9 6 -3 0 0C-6 -3 -5 -9 0 -9Z"/>';
+    var c = el('div', 'bravo'), f = '<path d="M0 -9C5 -9 6 -3 0 0C-6 -3 -5 -9 0 -9Z"/>';
     function fl(x, y, r, s, col) { var p = ''; for (var i = 0; i < 5; i++) p += '<g transform="rotate(' + (i * 72) + ')">' + f + '</g>'; return '<g transform="translate(' + x + ' ' + y + ') rotate(' + r + ') scale(' + s + ')" fill="' + col + '">' + p + '<circle r="2.6" fill="#fff6d8"/></g>'; }
     var art = el('div', 'bart'); art.setAttribute('aria-hidden', 'true');
     art.innerHTML = '<svg viewBox="0 0 220 120" width="100%" height="120">'
@@ -1674,7 +1701,7 @@
   });
 
   if (/[?&]test\b/.test(location.search)) window.__t = { drawCharge: drawCharge, TODAY: TODAY, curveAt: curveAt, effAt: effAt, oubliAll: oubliAll, lvl: lvl, interval: interval, expectNote: expectNote, decay: decay, data: function () { return data; }, reset: function () { DEC = null; resetCaches(); } }; /* accès pour les tests automatiques */
-  load(); chMigrer();
+  load(); chMigrer(); chPull();
   /* animations (règles de Pauline) : origine des fenêtres = point touché ; entrée décalée des cartes au changement d'onglet */
   var lastPt = null; document.addEventListener('pointerdown', function (e) { lastPt = { x: e.clientX, y: e.clientY }; }, true);
   (function () { var sm = HTMLDialogElement.prototype.showModal; HTMLDialogElement.prototype.showModal = function () { sm.apply(this, arguments); if (lastPt && !this.classList.contains('full')) { var r = this.getBoundingClientRect(); this.style.setProperty('--ox', (lastPt.x - r.left) + 'px'); this.style.setProperty('--oy', (lastPt.y - r.top) + 'px'); } }; })();
@@ -1687,7 +1714,7 @@
   $('examBack').addEventListener('click', function () { $('examDlg').close(); });
   $('closeFilt').addEventListener('click', function () { $('filtDlg').close(); });
   $('filtAll').addEventListener('click', function () { data.reglages.semestres = []; data.reglages.matieres = []; save(); render(); });
-  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 195'; syncLabel(); $('menu').showModal(); });
+  $('menuBtn').addEventListener('click', function () { $('ver').textContent = 'Version 196'; syncLabel(); $('menu').showModal(); });
   $('closeMenu').addEventListener('click', function () { $('menu').close(); });
   $('dataBtn').addEventListener('click', function () { $('menu').close(); view = 'set'; setTab = 'donnees'; try { localStorage.setItem('mes-exercices-onglet', view); } catch (e) { /* tant pis */ } window._top = 1; render(); window.scrollTo(0, 0); });
   $('syncBtn').addEventListener('click', function () { $('menu').close(); syncNow(false); });
@@ -1726,6 +1753,8 @@
   try { if (document.fonts && document.fonts.load) Promise.all([document.fonts.load('400 12px Poppins'), document.fonts.load('700 12px Poppins')]).then(function () { if (view === 'dash') renderDash(); }); } catch (e) { /* ignoré */ }
   syncAuto();
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') syncAuto(); });
+  document.addEventListener('visibilitychange', function () { var hid = document.visibilityState === 'hidden'; chNotify(hid && Object.keys(chGetAll()).length > 0); if (!hid) chPull(); }); /* appli quittée : notification du chrono ; de retour : on la retire et on reprend la copie la plus récente */
+  if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', function (e) { if (e.data && e.data.type === 'chrono-sync') chPull(); });
   window.addEventListener('online', syncAuto);
   if ('serviceWorker' in navigator) {
     var hadSW = !!navigator.serviceWorker.controller;

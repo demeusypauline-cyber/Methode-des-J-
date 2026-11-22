@@ -153,7 +153,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'OK  ' : 'FAIL') + ' ' + 
     const sd = { mats: [{ semestre: 'S', nom: 'A' }], ex, hist: [{ id: 'h0', ts: 0, jour: iso(0), avant: { succes: 1, evalue: iso(-12) }, niveau: 1, m: 60 }], reglages: { planning: [60, 60, 60, 60, 60, 60, 60] } };
     await p.addInitScript(s => { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', 1); localStorage.clear(); localStorage.setItem('mes-exercices-v1', s); sessionStorage.setItem('mes-exercices-sess', '1'); localStorage.setItem('mes-exercices-onglet', 'today'); } }, JSON.stringify(sd));
     await p.goto('http://localhost:8765/'); await p.waitForTimeout(400);
-    ok(await p.locator('.card.bravo').count() === 1 && (await p.locator('#v-today > p.muted').innerText()).includes('attendent'), 'À faire : budget du jour fait → félicitations + exos reportés signalés');
+    ok(await p.locator('.bravo').count() === 1 && (await p.locator('#v-today > p.muted').innerText()).includes('attendent'), 'À faire : budget du jour fait → félicitations + exos reportés signalés');
     await p.click('#menuBtn'); ok(!(await p.locator('#importSheet').isVisible()) && !(await p.locator('#exportBtn').isVisible()) && await p.locator('#syncBtn').isVisible(), 'menu : synchro seule, plus de doublons');
     await p.click('#dataBtn'); await p.waitForTimeout(200); ok((await p.locator('#v-set').innerText()).includes('Exporter mes données'), 'menu → Réglages › Données');
     await p.click('#tabs button[data-view=dash]'); await p.waitForTimeout(300);
@@ -168,7 +168,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'OK  ' : 'FAIL') + ' ' + 
     await p.addInitScript(s => { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', 1); localStorage.clear(); localStorage.setItem('mes-exercices-v1', s); sessionStorage.setItem('mes-exercices-sess', '1'); localStorage.setItem('mes-exercices-onglet', 'today'); } }, JSON.stringify(sd));
     await p.goto('http://localhost:8765/'); await p.waitForTimeout(300);
     await p.locator('#v-today .card', { hasText: 'K' }).locator('.abtn.main').first().click(); await p.locator('#doneBtns button').nth(3).click(); await p.waitForTimeout(150);
-    ok(await p.locator('.card.bravo').count() === 1, 'tous les exos du jour faits : carte de félicitations');
+    ok(await p.locator('.bravo').count() === 1, 'tous les exos du jour faits : carte de félicitations');
     await p.click('#tabs button[data-view=exos]'); await p.locator('#exoList .card', { hasText: 'K' }).click(); await p.fill('#fDate', iso(-1)); await p.selectOption('#fSucces', '4'); await p.click('#form button[type=submit]'); await p.waitForTimeout(100);
     const d = await p.evaluate(() => JSON.parse(localStorage.getItem('mes-exercices-v1'))), h = d.hist.filter(z => z.id === 'k1' && !z.fige).pop();
     ok(h && h.jour === iso(-1) && h.niveau === 4, `date et note corrigées dans la fiche → historique mis à jour (${h && h.jour}, ${h && h.niveau})`);
@@ -183,6 +183,27 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'OK  ' : 'FAIL') + ' ' + 
     await p.goto('http://localhost:8765/'); await p.waitForTimeout(300);
     const shown = await p.locator('#v-today > .card').allInnerTexts(), got = c.inn.every(n => shown.some(t => t.includes(n))) && shown.length - 1 === c.inn.length;
     ok(got, `budget 5 min : ${c.nom}`); await p.close();
+  }
+
+  // chrono en arrière-plan : notification, boutons, reprise au retour
+  {
+    const b2 = await chromium.launch({ channel: 'chromium' }); /* le mode « headless shell » refuse les notifications */ const ctx = await b2.newContext({ viewport: { width: 412, height: 860 } }); await ctx.grantPermissions(['notifications'], { origin: 'http://localhost:8765' }); const p = await ctx.newPage();
+    const sd = { mats: [{ semestre: 'S', nom: 'A' }], ex: [{ id: 'n1', semestre: 'S', matiere: 'A', intitule: 'N1', succes: 1, evalue: iso(-3), minutes: 30 }], hist: [], reglages: {} };
+    await p.addInitScript(s => { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', 1); localStorage.clear(); localStorage.setItem('mes-exercices-v1', s); sessionStorage.setItem('mes-exercices-sess', '1'); localStorage.setItem('mes-exercices-onglet', 'today'); } }, JSON.stringify(sd));
+    await p.goto('http://localhost:8765/'); await p.waitForTimeout(600); await p.evaluate(() => navigator.serviceWorker.ready);
+    await p.locator('#v-today .chgo').first().click(); await p.waitForTimeout(500);
+    const hide = async v => { await p.evaluate(v => { Object.defineProperty(document, 'visibilityState', { value: v, configurable: true }); document.dispatchEvent(new Event('visibilitychange')); }, v); await p.waitForTimeout(700); };
+    const notifs = () => p.evaluate(async () => (await (await navigator.serviceWorker.ready).getNotifications()).map(n => ({ tag: n.tag, title: n.title, body: n.body, actions: (n.actions || []).map(a => a.title) })));
+    await hide('hidden'); let ns = await notifs();
+    ok(ns.length === 1 && ns[0].title.includes('N1') && ns[0].actions.join() === 'Pause,Remettre à zéro', `chrono lancé puis appli quittée : notification avec Pause / Remettre à zéro (${JSON.stringify(ns[0] || null)})`);
+    await p.evaluate(async () => (await navigator.serviceWorker.ready).active.postMessage({ type: 'chrono-act', id: 'n1', action: 'pause' })); await p.waitForTimeout(600);
+    await hide('visible'); const d1 = await p.evaluate(() => JSON.parse(localStorage.getItem('mes-exercices-v1')).chronos.n1);
+    ok(d1 && !d1.start && d1.acc >= 0 && !d1.gone, 'bouton Pause de la notification : le chrono est en pause au retour dans l’appli');
+    ok((await notifs()).length === 0, 'retour dans l’appli : notification retirée');
+    await p.evaluate(async () => (await navigator.serviceWorker.ready).active.postMessage({ type: 'chrono-act', id: 'n1', action: 'reset' })); await p.waitForTimeout(600);
+    const d2 = await p.evaluate(() => JSON.parse(localStorage.getItem('mes-exercices-v1')).chronos.n1);
+    ok(d2 && d2.gone, 'bouton Remettre à zéro : le chrono est supprimé dans l’appli');
+    await ctx.close(); await b2.close();
   }
   // premier lancement
   const p = await b.newPage({ viewport: { width: 412, height: 860 } }); await p.goto('http://localhost:8765/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(300);
